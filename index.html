@@ -283,7 +283,7 @@ ROUTES.forEach(function(r) {
 
 // Restore saved
 try {
-  var sr = localStorage.getItem("bt_route");
+  var sr = localStorage.getItem("bt_route") || "21";
   var sb = localStorage.getItem("bt_block");
   if (sr) routeSelect.value = sr;
   if (sb) blockInput.value = sb;
