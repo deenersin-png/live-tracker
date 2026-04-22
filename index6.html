@@ -122,7 +122,7 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .seat-tag.many{background:var(--green-dim);color:var(--green)}
 .seat-tag.few{background:var(--yellow-dim);color:var(--yellow)}
 .seat-tag.standing,.seat-tag.full{background:var(--red-dim);color:var(--red)}
-.stop-name{font-size:12px;color:var(--text-faint);font-weight:500;margin-left:auto;max-width:45%;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stop-name{font-size:12px;color:var(--text-faint);font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* HEADWAY ROW */
 .headway-row{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border);font-size:12px;color:var(--text-dim)}
@@ -136,7 +136,10 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .layover-timer{font-size:13px;font-weight:700;color:var(--yellow);font-variant-numeric:tabular-nums}
 
 /* RUN TAG */
-.run-tag{display:inline-flex;align-items:center;font-size:12px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(188,140,255,.25);text-decoration:none;white-space:nowrap;touch-action:manipulation;margin-left:auto}
+.run-tag{display:inline-flex;align-items:center;font-size:12px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(188,140,255,.25);text-decoration:none;white-space:nowrap;touch-action:manipulation;flex-shrink:0;margin-left:auto}
+
+/* BOTTOM ROW (location + run#) */
+.node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
 
 /* PULLOFF ROW */
 .pulloff-row{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:12px;color:var(--text-dim)}
@@ -643,15 +646,6 @@ function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader,
   h += '<div class="node-row1">';
   h += '<span class="block-num">' + esc(String(blk)) + '</span>';
   h += '<span class="vehicle-num">' + ICONS.bus + ' ' + esc(String(vid)) + '</span>';
-  if (runInfo) {
-    const isMob = navigator.maxTouchPoints > 0;
-    const padUrl = (isMob ? runInfo.mob : runInfo.pc) || runInfo.mob || runInfo.pc;
-    if (padUrl) {
-      h += '<a class="run-tag" href="' + esc(padUrl) + '" target="_blank" rel="noopener">Run #: ' + esc(String(runInfo.runno)) + '</a>';
-    } else {
-      h += '<span class="run-tag">Run #: ' + esc(String(runInfo.runno)) + '</span>';
-    }
-  }
   h += '</div>';
 
   if (adjFollower) {
@@ -666,7 +660,6 @@ function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader,
     h += '<div class="node-row2">';
     h += '<span class="late-tag ' + lateClass + '">' + lateText + '</span>';
     if (seat.show) h += '<span class="seat-tag ' + seat.c + '">' + ICONS.seat + ' ' + seat.t + '</span>';
-    if (stop) h += '<span class="stop-name">→ ' + esc(stop) + '</span>';
     h += '</div>';
   }
 
@@ -684,6 +677,21 @@ function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader,
     const pullOff = runInfo && runInfo.pullOff ? runInfo.pullOff : null;
     h += '<div class="pulloff-row"><span class="terminal-badge">PULL OFF</span>';
     h += '<span class="pulloff-time">' + (pullOff ? esc(pullOff) : '—') + '</span></div>';
+  }
+
+  if (stop || runInfo) {
+    h += '<div class="node-bottom">';
+    if (stop && !isLay) h += '<span class="stop-name">→ ' + esc(stop) + '</span>';
+    if (runInfo) {
+      const isMob = navigator.maxTouchPoints > 0;
+      const padUrl = (isMob ? runInfo.mob : runInfo.pc) || runInfo.mob || runInfo.pc;
+      if (padUrl) {
+        h += '<a class="run-tag" href="' + esc(padUrl) + '" target="_blank" rel="noopener">Run #: ' + esc(String(runInfo.runno)) + '</a>';
+      } else {
+        h += '<span class="run-tag">Run #: ' + esc(String(runInfo.runno)) + '</span>';
+      }
+    }
+    h += '</div>';
   }
 
   return h + '</div></div>';
