@@ -138,6 +138,13 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 /* RUN TAG */
 .run-tag{display:inline-flex;align-items:center;font-size:12px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(188,140,255,.25);text-decoration:none;white-space:nowrap;touch-action:manipulation;flex-shrink:0;margin-left:auto}
 
+/* SCHEDULED LEADER ROW */
+.sched-leader-row{display:flex;align-items:center;gap:6px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
+.sched-leader-label{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--red-dim);color:var(--red);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.sched-leader-blk{font-size:13px;font-weight:800;color:var(--text)}
+.sched-leader-bus{font-size:12px;font-weight:600;color:var(--text-dim)}
+.sched-leader-missing{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--red-dim);color:var(--red);letter-spacing:.03em}
+
 /* BOTTOM ROW (location + run#) */
 .node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
 
@@ -317,12 +324,20 @@ async function loadScheduleData() {
       for (const row of parseCSV(schedText)) {
         if (!row.runno) continue;
         const pad = runToPad.get(String(row.runno)) || {};
+        const runBlocks = [];
         for (let i = 1; i <= 10; i++) {
           const blk = (row['b' + i] || '').trim();
-          if (blk && blk !== '0') {
-            sched.blockToRun.set(blk, { runno: row.runno, mob: pad.mob || '', pc: pad.pc || '' });
-          }
+          if (blk && blk !== '0') runBlocks.push(blk);
         }
+        runBlocks.forEach((blk, idx) => {
+          sched.blockToRun.set(blk, {
+            runno:         row.runno,
+            mob:           pad.mob || '',
+            pc:            pad.pc  || '',
+            schedLeader:   idx > 0                    ? runBlocks[idx - 1] : null,
+            schedFollower: idx < runBlocks.length - 1 ? runBlocks[idx + 1] : null,
+          });
+        });
       }
     }));
     sched.loaded = true;
@@ -422,8 +437,10 @@ function parseTVData(raw) {
     }
   }
   return buses.filter(b => {
-    const ts = parseInt(b.timestamp) || 0;
+    const ts  = parseInt(b.timestamp) || 0;
     const off = String(b.Offset || '');
+    const offNum = parseFloat(off);
+    if (!isNaN(offNum) && Math.abs(offNum) >= 500) return false;
     return ts > 1000000 || (off && off !== '999');
   });
 }
@@ -489,12 +506,19 @@ function classify(merged, block) {
   same.sort((a, b) => (b.next_stop_sequence || 0) - (a.next_stop_sequence || 0));
 
   const myPos = same.findIndex(b => String(b.BlockID || '') === block);
+  const myRunInfo = sched.blockToRun.get(block);
+  const schedLeaderBlk = myRunInfo ? myRunInfo.schedLeader : null;
+  const schedLeaderBus = schedLeaderBlk
+    ? merged.find(b => String(b.BlockID || '') === schedLeaderBlk) || null
+    : null;
   return {
     found: true, direction: dir,
     leaders:         same.slice(0, myPos),
     you:             same[myPos],
     followers:       same.slice(myPos + 1),
     immediateLeader: myPos > 0 ? same[myPos - 1] : null,
+    schedLeaderBlk,
+    schedLeaderBus,
   };
 }
 
@@ -543,7 +567,17 @@ function renderMain(merged, block, route) {
 
   // Leader status banner
   const ldr = cl.immediateLeader;
-  if (!ldr) {
+  const schedBlk = cl.schedLeaderBlk;
+  const schedBus  = cl.schedLeaderBus;
+  const schedMissing = schedBlk && !schedBus;
+  const schedDiffers = schedBlk && ldr && String(ldr.BlockID || '') !== schedBlk;
+
+  if (schedMissing) {
+    const actualPart = ldr ? ' — actual: Bus V#' + esc(String(ldr.VehicleID || ldr.BlockID || '?')) : ' — no actual leader visible';
+    showBanner('warn', '⚠', 'Sched leader Block ' + esc(schedBlk) + ' NOT IN SERVICE' + actualPart);
+  } else if (schedDiffers) {
+    showBanner('info', 'ℹ', 'Sched leader Block ' + esc(schedBlk) + ' — another bus is physically ahead');
+  } else if (!ldr) {
     showBanner('warn', '⚠', 'You are first ' + dirShort(cl.direction) + ' — no leading bus');
   } else if (ldr._isLayover) {
     showBanner('info', 'ℹ', 'Leading Bus ' + esc(ldr.BlockID) + ' is AT TERMINAL');
@@ -581,7 +615,7 @@ function buildFoundMode(cl, anim) {
   if (leaders.length > 0)
     h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">● Selected Bus</div>';
 
-  h += buildNode(you, 'you', 'Selected Bus', idx++, anim, null, null, cl.immediateLeader, followers[0] || null);
+  h += buildNode(you, 'you', 'Selected Bus', idx++, anim, null, null, cl.immediateLeader, followers[0] || null, { schedLeaderBlk: cl.schedLeaderBlk, schedLeaderBus: cl.schedLeaderBus });
 
   if (followers.length > 0)
     h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">↓ Behind · ' + followers.length + '</div>';
@@ -615,7 +649,7 @@ function buildAllBuses(merged, anim) {
   return h + '</div></div>';
 }
 
-function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader, adjFollower) {
+function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader, adjFollower, schedInfo) {
   const late = parseInt(bus.late) || 0;
   let lateClass, lateText;
   if (late === 0)         { lateClass = 'ontime'; lateText = 'On Time'; }
@@ -677,6 +711,24 @@ function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader,
     const pullOff = runInfo && runInfo.pullOff ? runInfo.pullOff : null;
     h += '<div class="pulloff-row"><span class="terminal-badge">PULL OFF</span>';
     h += '<span class="pulloff-time">' + (pullOff ? esc(pullOff) : '—') + '</span></div>';
+  }
+
+  if (schedInfo && schedInfo.schedLeaderBlk) {
+    const sBlk = schedInfo.schedLeaderBlk;
+    const actualBlk = adjLeader ? String(adjLeader.BlockID || '') : null;
+    if (actualBlk !== sBlk) {
+      const present = !!schedInfo.schedLeaderBus;
+      const sVid = present ? (schedInfo.schedLeaderBus.VehicleID || schedInfo.schedLeaderBus.BlockID || '—') : null;
+      h += '<div class="sched-leader-row">';
+      h += '<span class="sched-leader-label">SCHED LEADER</span>';
+      h += '<span class="sched-leader-blk">' + esc(sBlk) + '</span>';
+      if (present) {
+        h += '<span class="sched-leader-bus">Bus# ' + esc(String(sVid)) + '</span>';
+      } else {
+        h += '<span class="sched-leader-missing">NOT IN SERVICE</span>';
+      }
+      h += '</div>';
+    }
   }
 
   if (stop || runInfo) {
