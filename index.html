@@ -92,7 +92,7 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .node-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
 .bus-node.you .node-card{border-color:var(--accent);box-shadow:0 0 16px var(--you-glow);background:linear-gradient(135deg,rgba(88,166,255,.06),var(--card))}
 .bus-node.my-leader .node-card{border-color:var(--orange);box-shadow:0 0 12px rgba(240,136,62,.15);background:linear-gradient(135deg,rgba(240,136,62,.04),var(--card))}
-.bus-node.layover .node-card{opacity:.88;border-style:dashed;border-color:var(--yellow)}
+.bus-node.layover .node-card{border-style:dashed;border-color:var(--yellow);background:linear-gradient(135deg,rgba(210,153,34,.06),var(--card))}
 
 /* CARD CONTENT */
 .node-row1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -137,6 +137,15 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 
 /* RUN TAG */
 .run-tag{display:inline-flex;align-items:center;font-size:12px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(188,140,255,.25);text-decoration:none;white-space:nowrap;touch-action:manipulation;flex-shrink:0;margin-left:auto}
+
+/* SCHEDULED LEADER ROW */
+.sched-leader-row{display:flex;align-items:center;gap:6px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
+.sched-leader-label{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--red-dim);color:var(--red);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.sched-leader-blk{font-size:13px;font-weight:800;color:var(--text)}
+.sched-leader-bus{font-size:12px;font-weight:600;color:var(--text-dim)}
+.sched-leader-missing{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--red-dim);color:var(--red);letter-spacing:.03em}
+.sched-leader-passed{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--orange-dim);color:var(--orange);letter-spacing:.03em}
+.not-tracking-tag{font-size:13px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--orange-dim);color:var(--orange)}
 
 /* BOTTOM ROW (location + run#) */
 .node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
@@ -244,8 +253,8 @@ const ROUTES = [
 ];
 const REFRESH_MS         = 30000;
 const FETCH_TIMEOUT_MS   = 8000;
-const LAYOVER_TIMEOUT_MS = 20 * 60000;
-const MIN_SEEN           = 2;
+const LAYOVER_TIMEOUT_MS = 45 * 60000;
+const MIN_SEEN           = 1;
 const LATE_BAD           = 6;
 
 const API = {
@@ -259,7 +268,7 @@ const SCHED_BASE = 'https://deenersin-png.github.io/septa-scheduler/data';
 const state = { route: '', block: '', status: 'idle', lastUpdate: null };
 
 // ── SCHEDULE DATA ────────────────────────────────────────────
-const sched = { blockToRun: new Map(), loaded: false, loading: false };
+const sched = { blockToRun: new Map(), loaded: false, loading: false, schedOrderByRoute: new Map() };
 
 function getDayType() {
   const d = new Date().getDay();
@@ -320,14 +329,80 @@ async function loadScheduleData() {
         for (let i = 1; i <= 10; i++) {
           const blk = (row['b' + i] || '').trim();
           if (blk && blk !== '0') {
-            sched.blockToRun.set(blk, { runno: row.runno, mob: pad.mob || '', pc: pad.pc || '' });
+            const routeRaw = (row['r' + i] || '').trim();
+            const route = routeRaw.split('-')[0].trim();
+            const pullOut = (row['pot' + i] || '').trim();
+            const entry = {
+              runno: row.runno, mob: pad.mob || '', pc: pad.pc || '',
+              route, pullOut,
+              startMin:  parsePullOutTime(row.start  || ''),
+              finishMin: parsePullOutTime(row.finish || ''),
+            };
+            if (!sched.blockToRun.has(blk)) sched.blockToRun.set(blk, []);
+            sched.blockToRun.get(blk).push(entry);
           }
         }
       }
     }));
+
+    // build scheduled order per route: sort blocks by their earliest pull-out time
+    const routeBlocks = new Map();
+    for (const [blk, runs] of sched.blockToRun) {
+      const route = runs[0] && runs[0].route;
+      if (!route) continue;
+      const minT = Math.min(...runs.map(r => parsePullOutTime(r.pullOut)));
+      if (!routeBlocks.has(route)) routeBlocks.set(route, []);
+      routeBlocks.get(route).push({ blk, t: minT });
+    }
+    sched.schedOrderByRoute = new Map();
+    for (const [route, entries] of routeBlocks) {
+      entries.sort((a, b) => a.t - b.t);
+      sched.schedOrderByRoute.set(route, entries.map(e => e.blk));
+    }
     sched.loaded = true;
   } catch(e) { console.warn('Schedule load failed:', e); }
   sched.loading = false;
+}
+
+// Parse time out of "2023-10-11 12:43 AM" or "12:43 AM" → minutes since midnight
+function parsePullOutTime(t) {
+  if (!t) return Infinity;
+  const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!m) return Infinity;
+  let h = parseInt(m[1]);
+  const min = parseInt(m[2]);
+  const ampm = m[3].toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+// Return the run entry for this block that is active right now.
+// A block may have two runs (driver relief) that overlap 5-30 min.
+// Pick the run whose start–finish window contains the current time;
+// when multiple match (overlap), prefer the one that started latest.
+function getCurrentRunInfo(blk) {
+  const runs = sched.blockToRun.get(String(blk));
+  if (!runs || !runs.length) return null;
+  if (runs.length === 1) return runs[0];
+  const now = new Date().getHours() * 60 + new Date().getMinutes();
+  const active = runs.filter(r => {
+    const s = r.startMin, f = r.finishMin;
+    if (s === Infinity || f === Infinity) return false;
+    // handle runs that span midnight (finish < start)
+    return f < s ? (now >= s || now <= f) : (now >= s && now <= f);
+  });
+  if (!active.length) return runs[0]; // outside all windows, fallback
+  return active.reduce((best, r) => r.startMin > best.startMin ? r : best, active[0]);
+}
+
+function getSchedLeader(block) {
+  const runs = sched.blockToRun.get(block);
+  const route = runs && runs[0] && runs[0].route;
+  if (!route) return null;
+  const order = sched.schedOrderByRoute.get(route) || [];
+  const idx = order.indexOf(block);
+  return idx > 0 ? order[idx - 1] : null;
 }
 
 // ── BUS CACHE ────────────────────────────────────────────────
@@ -421,9 +496,14 @@ function parseTVData(raw) {
       if (Array.isArray(v)) v.forEach(b => b && typeof b === 'object' && buses.push(b));
     }
   }
-  return buses.filter(b => {
-    const ts = parseInt(b.timestamp) || 0;
+  return buses.map(b => {
+    const offNum = parseFloat(String(b.Offset || ''));
+    if (!isNaN(offNum) && Math.abs(offNum) >= 500) b._notTracking = true;
+    return b;
+  }).filter(b => {
+    const ts  = parseInt(b.timestamp) || 0;
     const off = String(b.Offset || '');
+    if (b._notTracking && !parseInt(b.next_stop_sequence)) return false;
     return ts > 1000000 || (off && off !== '999');
   });
 }
@@ -489,12 +569,31 @@ function classify(merged, block) {
   same.sort((a, b) => (b.next_stop_sequence || 0) - (a.next_stop_sequence || 0));
 
   const myPos = same.findIndex(b => String(b.BlockID || '') === block);
+
+  const schedLeaderBlk = getSchedLeader(block);
+  const schedLeaderBus = schedLeaderBlk
+    ? merged.find(b => String(b.BlockID || '') === schedLeaderBlk) || null
+    : null;
+  let schedLeaderState = null;
+  if (schedLeaderBlk) {
+    if (!schedLeaderBus) {
+      schedLeaderState = 'missing';
+    } else {
+      const mySeq = parseInt(same[myPos].next_stop_sequence) || 0;
+      const lSeq  = parseInt(schedLeaderBus.next_stop_sequence) || 0;
+      schedLeaderState = lSeq >= mySeq ? 'ahead' : 'behind';
+    }
+  }
+
   return {
     found: true, direction: dir,
     leaders:         same.slice(0, myPos),
     you:             same[myPos],
     followers:       same.slice(myPos + 1),
     immediateLeader: myPos > 0 ? same[myPos - 1] : null,
+    schedLeaderBlk,
+    schedLeaderBus,
+    schedLeaderState,
   };
 }
 
@@ -543,7 +642,17 @@ function renderMain(merged, block, route) {
 
   // Leader status banner
   const ldr = cl.immediateLeader;
-  if (!ldr) {
+  const schedBlk   = cl.schedLeaderBlk;
+  const schedBus   = cl.schedLeaderBus;
+  const schedState = cl.schedLeaderState; // 'missing' | 'behind' | 'ahead' | null
+
+  if (schedState === 'missing') {
+    const actualPart = ldr ? ' — actual: Bus V#' + esc(String(ldr.VehicleID || ldr.BlockID || '?')) : ' — no actual leader visible';
+    showBanner('warn', '⚠', 'Sched leader Block ' + esc(schedBlk) + ' NOT IN SERVICE' + actualPart);
+  } else if (schedState === 'behind') {
+    const sVid = schedBus ? (schedBus.VehicleID || schedBus.BlockID || '?') : '?';
+    showBanner('warn', '⚠', 'Sched leader Block ' + esc(schedBlk) + ' passed — Bus V#' + esc(String(sVid)) + ' is behind you');
+  } else if (!ldr) {
     showBanner('warn', '⚠', 'You are first ' + dirShort(cl.direction) + ' — no leading bus');
   } else if (ldr._isLayover) {
     showBanner('info', 'ℹ', 'Leading Bus ' + esc(ldr.BlockID) + ' is AT TERMINAL');
@@ -581,7 +690,7 @@ function buildFoundMode(cl, anim) {
   if (leaders.length > 0)
     h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">● Selected Bus</div>';
 
-  h += buildNode(you, 'you', 'Selected Bus', idx++, anim, null, null, cl.immediateLeader, followers[0] || null);
+  h += buildNode(you, 'you', 'Selected Bus', idx++, anim, null, null, cl.immediateLeader, followers[0] || null, { schedLeaderBlk: cl.schedLeaderBlk, schedLeaderBus: cl.schedLeaderBus, schedLeaderState: cl.schedLeaderState });
 
   if (followers.length > 0)
     h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">↓ Behind · ' + followers.length + '</div>';
@@ -615,7 +724,7 @@ function buildAllBuses(merged, anim) {
   return h + '</div></div>';
 }
 
-function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader, adjFollower) {
+function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader, adjFollower, schedInfo) {
   const late = parseInt(bus.late) || 0;
   let lateClass, lateText;
   if (late === 0)         { lateClass = 'ontime'; lateText = 'On Time'; }
@@ -630,35 +739,23 @@ function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader,
   const stop    = bus.next_stop_name || '';
   const isLay   = !!bus._isLayover;
   const nodeRole = isLay && role !== 'you' ? 'layover' : role;
-  const runInfo  = sched.blockToRun.get(String(blk));
+  const runInfo  = getCurrentRunInfo(blk);
 
   let h = '<div class="bus-node ' + nodeRole + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.02) + 's">';
   h += '<div class="node-card">';
-
-  if (adjLeader) {
-    const lBlk = adjLeader.BlockID || adjLeader.label || '—';
-    const lVid  = adjLeader.VehicleID || adjLeader.label || '—';
-    h += '<div class="neighbor-item leader-n"><span class="neighbor-label">Leader</span>';
-    h += '<span class="neighbor-blk">' + esc(String(lBlk)) + '</span>';
-    h += '<span class="neighbor-bus">Bus# ' + esc(String(lVid)) + '</span></div>';
-  }
 
   h += '<div class="node-row1">';
   h += '<span class="block-num">' + esc(String(blk)) + '</span>';
   h += '<span class="vehicle-num">' + ICONS.bus + ' ' + esc(String(vid)) + '</span>';
   h += '</div>';
 
-  if (adjFollower) {
-    const fBlk = adjFollower.BlockID || adjFollower.label || '—';
-    const fVid  = adjFollower.VehicleID || adjFollower.label || '—';
-    h += '<div class="neighbor-item follower-n"><span class="neighbor-label">Follower</span>';
-    h += '<span class="neighbor-blk">' + esc(String(fBlk)) + '</span>';
-    h += '<span class="neighbor-bus">Bus# ' + esc(String(fVid)) + '</span></div>';
-  }
-
   if (!isLay) {
     h += '<div class="node-row2">';
-    h += '<span class="late-tag ' + lateClass + '">' + lateText + '</span>';
+    if (bus._notTracking) {
+      h += '<span class="not-tracking-tag">NOT TRACKING</span>';
+    } else {
+      h += '<span class="late-tag ' + lateClass + '">' + lateText + '</span>';
+    }
     if (seat.show) h += '<span class="seat-tag ' + seat.c + '">' + ICONS.seat + ' ' + seat.t + '</span>';
     h += '</div>';
   }
@@ -674,9 +771,23 @@ function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader,
     h += '<div class="layover-row"><span class="terminal-badge">AT TERMINAL</span>';
     h += '<span>Layover:</span>';
     h += '<span class="layover-timer" data-layover-since="' + (bus._layoverSince || 0) + '">' + dur + '</span></div>';
-    const pullOff = runInfo && runInfo.pullOff ? runInfo.pullOff : null;
-    h += '<div class="pulloff-row"><span class="terminal-badge">PULL OFF</span>';
-    h += '<span class="pulloff-time">' + (pullOff ? esc(pullOff) : '—') + '</span></div>';
+  }
+
+  if (schedInfo && schedInfo.schedLeaderBlk && schedInfo.schedLeaderState !== 'ahead') {
+    const sBlk   = schedInfo.schedLeaderBlk;
+    const sState = schedInfo.schedLeaderState; // 'missing' | 'behind'
+    const sVid   = schedInfo.schedLeaderBus
+      ? (schedInfo.schedLeaderBus.VehicleID || schedInfo.schedLeaderBus.BlockID || '—') : null;
+    h += '<div class="sched-leader-row">';
+    h += '<span class="sched-leader-label">SCHED LEADER</span>';
+    h += '<span class="sched-leader-blk">' + esc(sBlk) + '</span>';
+    if (sState === 'missing') {
+      h += '<span class="sched-leader-missing">NOT IN SERVICE</span>';
+    } else {
+      h += '<span class="sched-leader-passed">PASSED</span>';
+      if (sVid) h += '<span class="sched-leader-bus">Bus# ' + esc(String(sVid)) + '</span>';
+    }
+    h += '</div>';
   }
 
   if (stop || runInfo) {
@@ -868,7 +979,7 @@ function seatInfo(v) {
     FULL:                       { t:'Full',         c:'full',     show:true  },
   })[v] || { t:'—', c:'na', show:false };
 }
-
+ 
 function esc(s) {
   if (s == null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
