@@ -6,7 +6,17 @@
 <meta name="theme-color" content="#0d1117">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>SEPTA Block Tracker</title>
+<title>Bus Tracker</title>
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-QXEKGF4DXT"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-QXEKGF4DXT');
+</script>
+  
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -46,9 +56,6 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .route-select option{background:var(--card);color:var(--text);font-size:16px}
 .route-select:focus{border-color:var(--purple)}
 .select-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:14px;pointer-events:none}
-.block-input{width:110px;flex-shrink:0;background:var(--card);border:1.5px solid var(--border-light);border-radius:10px;padding:12px 10px;font-family:inherit;font-size:20px;font-weight:800;color:var(--accent);letter-spacing:.12em;text-align:center;outline:none;caret-color:var(--accent);touch-action:manipulation}
-.block-input::placeholder{color:var(--text-faint);font-weight:500;letter-spacing:.02em;font-size:13px}
-.block-input:focus{border-color:var(--accent)}
 
 /* ALERT BANNER */
 .alert-banner{padding:11px 16px;font-size:14px;font-weight:600;display:flex;align-items:flex-start;gap:8px;border-bottom:1px solid var(--border);line-height:1.4}
@@ -75,44 +82,53 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .bus-count{font-size:13px;color:var(--text-faint)}
 .refresh-tag{font-size:12px;color:var(--text-faint);font-weight:500}
 
+/* SWIPEABLE DIRECTION PAGES */
+.pages-wrap{overflow:hidden}
+.pages-track{display:flex;transition:transform .25s ease-out}
+.page{flex:0 0 100%;min-width:0}
+.page-dots{display:flex;justify-content:center;gap:8px;padding:10px 16px 16px;position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border)}
+.page-dot{font-size:12px;font-weight:700;padding:6px 16px;border-radius:20px;background:var(--card);color:var(--text-faint);cursor:pointer;touch-action:manipulation;border:1px solid var(--border-light)}
+.page-dot.active{background:var(--accent-dim);color:var(--accent);border-color:var(--accent)}
+
 /* TIMELINE */
-.timeline-wrap{padding:18px 16px 100px;will-change:transform;-webkit-overflow-scrolling:touch}
+.timeline-wrap{padding:18px 16px 24px;will-change:transform;-webkit-overflow-scrolling:touch}
 .timeline{position:relative;display:flex;flex-direction:column}
 .timeline::before{content:'';position:absolute;left:20px;top:0;bottom:0;width:2px;background:var(--border-light);border-radius:1px}
 
 /* BUS NODES */
 .bus-node{position:relative;padding:0 0 0 50px;margin-bottom:5px}
-.bus-node::before{content:'';position:absolute;left:13px;top:18px;width:16px;height:16px;border-radius:50%;background:var(--border-light);border:2px solid var(--bg);z-index:2}
-.bus-node.leading::before{background:var(--green)}
-.bus-node.my-leader::before{background:var(--orange);box-shadow:0 0 8px rgba(240,136,62,.4)}
-.bus-node.following::before{background:var(--purple)}
-.bus-node.layover::before{background:var(--yellow);opacity:.8}
-.bus-node.you::before{width:20px;height:20px;left:11px;top:16px;background:var(--accent);box-shadow:0 0 12px var(--you-glow),0 0 22px var(--you-glow);border-color:var(--accent)}
+/* Direction-of-travel arrow on the timeline: down for east/south (buses move
+   down the list), up for west/north (buses move up). */
+.bus-node::before{content:'▼';position:absolute;left:12px;top:15px;width:18px;text-align:center;font-size:15px;line-height:1;z-index:2;color:var(--border-light);background:var(--bg)}
+.bus-node.up::before{content:'▲'}
+.bus-node.layover::before{color:var(--yellow)}
+.bus-node.scheduled::before{color:var(--text-faint)}
 
 .node-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
-.bus-node.you .node-card{border-color:var(--accent);box-shadow:0 0 16px var(--you-glow);background:linear-gradient(135deg,rgba(88,166,255,.06),var(--card))}
-.bus-node.my-leader .node-card{border-color:var(--orange);box-shadow:0 0 12px rgba(240,136,62,.15);background:linear-gradient(135deg,rgba(240,136,62,.04),var(--card))}
 .bus-node.layover .node-card{border-style:dashed;border-color:var(--yellow);background:linear-gradient(135deg,rgba(210,153,34,.06),var(--card))}
+.bus-node.scheduled .node-card{border-style:dashed;border-color:var(--border-light);background:linear-gradient(135deg,rgba(139,148,158,.05),var(--card))}
 
 /* CARD CONTENT */
 .node-row1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.role-tag{font-size:12px;font-weight:700;padding:3px 8px;border-radius:5px;letter-spacing:.02em;text-transform:uppercase;white-space:nowrap}
-.role-tag.leading{background:var(--green-dim);color:var(--green)}
-.role-tag.my-leader{background:var(--orange-dim);color:var(--orange)}
-.role-tag.following{background:var(--purple-dim);color:var(--purple)}
-.role-tag.you{background:var(--accent-dim);color:var(--accent)}
-.role-tag.layover{background:var(--yellow-dim);color:var(--yellow)}
-.role-tag.other{background:var(--border);color:var(--text-dim)}
-.dir-tag{font-size:11px;font-weight:700;padding:3px 6px;border-radius:4px;background:var(--border);color:var(--text-dim)}
 .block-num{font-size:16px;font-weight:800;color:var(--text);letter-spacing:.05em}
-.bus-node.you .block-num{color:var(--accent)}
-.bus-node.my-leader .block-num{color:var(--orange)}
 .bus-node.layover .block-num{color:var(--yellow)}
+.bus-node.scheduled .block-num{color:var(--text-dim)}
+.vehicle-num.unknown{color:var(--text-faint);background:transparent;border:1px dashed var(--border-light)}
+
+/* SCHEDULED-ONLY ROW (no live data, from GTFS schedule) */
+.sched-only-row{display:flex;align-items:center;gap:8px;margin-top:7px;flex-wrap:wrap}
+.sched-only-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--accent-dim);color:var(--accent);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.sched-only-badge.expected{background:var(--orange-dim);color:var(--orange)}
+.sched-only-badge.served{background:var(--yellow-dim);color:var(--yellow)}
+.term-timer{font-size:13px;font-weight:700;color:var(--yellow);font-variant-numeric:tabular-nums;margin-left:auto}
+.sched-only-detail{font-size:14px;color:var(--text);font-weight:600}
+.sched-only-detail.overdue{color:var(--red)}
 .vehicle-num{display:flex;align-items:center;gap:4px;font-size:15px;font-weight:700;color:var(--text-dim);margin-left:8px;background:var(--border);padding:3px 9px;border-radius:5px}
 .vehicle-num svg{width:14px;height:14px;fill:currentColor;flex-shrink:0}
 
 .node-row2{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap}
 .late-tag{font-size:14px;font-weight:700;padding:3px 9px;border-radius:5px}
+.node-row1 .late-tag,.node-row1 .not-tracking-tag{margin-left:auto}
 .late-tag.ontime{background:var(--green-dim);color:var(--green)}
 .late-tag.early{background:var(--yellow-dim);color:var(--yellow)}
 .late-tag.mild{background:var(--yellow-dim);color:var(--yellow)}
@@ -122,21 +138,28 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .seat-tag.many{background:var(--green-dim);color:var(--green)}
 .seat-tag.few{background:var(--yellow-dim);color:var(--yellow)}
 .seat-tag.standing,.seat-tag.full{background:var(--red-dim);color:var(--red)}
-.stop-name{font-size:12px;color:var(--text-faint);font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-/* HEADWAY ROW */
-.headway-row{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border);font-size:12px;color:var(--text-dim)}
-.headway-val{font-size:13px;font-weight:700;color:var(--text-dim);font-variant-numeric:tabular-nums}
-.bus-node.my-leader .headway-val{color:var(--orange)}
-.bus-node.following .headway-val{color:var(--purple)}
+.stop-name{font-size:15px;color:var(--text);font-weight:600;flex:1;min-width:0;line-height:1.35}
 
 /* LAYOVER ROW */
 .layover-row{display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border);font-size:12px;color:var(--text-dim)}
 .terminal-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--yellow-dim);color:var(--yellow);letter-spacing:.04em;text-transform:uppercase}
 .layover-timer{font-size:13px;font-weight:700;color:var(--yellow);font-variant-numeric:tabular-nums}
+.due-out{font-size:12px;font-weight:700;color:var(--text-dim);margin-left:auto;font-variant-numeric:tabular-nums}
+.due-out.overdue{color:var(--red)}
 
-/* RUN TAG */
-.run-tag{display:inline-flex;align-items:center;font-size:12px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(188,140,255,.25);text-decoration:none;white-space:nowrap;touch-action:manipulation;flex-shrink:0;margin-left:auto}
+/* FLAG ROW (possible follower-bunching) */
+.flag-row{display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border);flex-wrap:wrap}
+.flag-badge{font-size:12px;font-weight:800;padding:4px 9px;border-radius:5px;background:var(--red-dim);color:var(--red);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.flag-badge.flag-follower{background:var(--red-dim);color:var(--red)}
+.flag-badge.flag-leader{background:var(--yellow-dim);color:var(--yellow)}
+.flag-detail{font-size:12px;color:var(--text-dim)}
+
+/* PADDLE ROW (pull-out/pull-in times + run-number paddle links) */
+.paddle-row{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border);flex-wrap:wrap}
+.po-pi{font-size:13px;font-weight:700;color:var(--text-dim);font-variant-numeric:tabular-nums}
+.run-chip{font-size:12px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(188,140,255,.25);text-decoration:none;white-space:nowrap;touch-action:manipulation}
+.run-chip.nolink{opacity:.55;border-style:dashed}
+a.run-chip:active{opacity:.7}
 
 /* SCHEDULED LEADER ROW */
 .sched-leader-row{display:flex;align-items:center;gap:6px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
@@ -144,26 +167,26 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .sched-leader-blk{font-size:13px;font-weight:800;color:var(--text)}
 .sched-leader-bus{font-size:12px;font-weight:600;color:var(--text-dim)}
 .sched-leader-missing{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--red-dim);color:var(--red);letter-spacing:.03em}
+.sched-leader-notdue{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--border);color:var(--text-dim);letter-spacing:.03em}
 .sched-leader-passed{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--orange-dim);color:var(--orange);letter-spacing:.03em}
 .not-tracking-tag{font-size:13px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--orange-dim);color:var(--orange)}
 
-/* BOTTOM ROW (location + run#) */
+/* LEADER TIMELINE (past / current / next leaders, collapsible) */
+.leader-tl{margin-top:7px;padding-top:7px;border-top:1px solid var(--border);font-size:12px}
+.leader-tl summary{cursor:pointer;font-weight:700;color:var(--accent);list-style:none;padding:2px 0;touch-action:manipulation}
+.leader-tl summary::-webkit-details-marker{display:none}
+.leader-tl summary::before{content:'▸ ';color:var(--text-faint)}
+.leader-tl[open] summary::before{content:'▾ '}
+.tl-head{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);margin-top:7px;margin-bottom:2px}
+.tl-row{display:flex;align-items:center;gap:7px;padding:2px 0;flex-wrap:wrap}
+.tl-dir{font-weight:700;color:var(--text-dim);min-width:24px}
+.tl-time{font-variant-numeric:tabular-nums;color:var(--text-faint)}
+.tl-blk{font-weight:700;color:var(--text)}
+.tl-bus{color:var(--text-dim)}
+.tl-status{margin-left:auto;font-weight:600;color:var(--text-dim)}
+
+/* BOTTOM ROW (location) */
 .node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
-
-/* PULLOFF ROW */
-.pulloff-row{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:12px;color:var(--text-dim)}
-.pulloff-time{font-size:14px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
-
-/* NEIGHBOR ITEMS (leader above row1, follower below row1) */
-.neighbor-item{display:flex;align-items:center;gap:6px;font-size:12px}
-.neighbor-item.leader-n{padding-bottom:7px;margin-bottom:7px;border-bottom:1px solid var(--border)}
-.neighbor-item.follower-n{padding-top:7px;margin-top:7px;border-top:1px solid var(--border)}
-.neighbor-label{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;min-width:72px;text-align:center;letter-spacing:.03em;text-transform:uppercase}
-.leader-n .neighbor-label{background:var(--orange-dim);color:var(--orange)}
-.follower-n .neighbor-label{background:var(--purple-dim);color:var(--purple)}
-.neighbor-blk{font-size:13px;font-weight:800;color:var(--text)}
-.neighbor-bus{font-size:12px;font-weight:600;color:var(--text-dim)}
-a.run-tag:active{opacity:.7}
 
 /* SECTION LABELS */
 .section-label{padding:10px 16px 8px;font-size:15px;font-weight:800;color:var(--text);letter-spacing:.04em;text-transform:uppercase;text-align:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--card);margin:4px 0}
@@ -202,9 +225,6 @@ a.run-tag:active{opacity:.7}
       </select>
       <span class="select-arrow">▾</span>
     </div>
-    <input type="text" id="blockInput" class="block-input"
-      placeholder="Block #" maxlength="5" inputmode="numeric"
-      pattern="[0-9]*" autocomplete="off">
   </div>
 </div>
 
@@ -234,7 +254,7 @@ a.run-tag:active{opacity:.7}
   <div class="msg">
     <div class="icon">🚌</div>
     <div class="main">Select a Route</div>
-    <div class="sub">See all active buses and find<br>your leader's on-time status</div>
+    <div class="sub">See all active buses · swipe left/right<br>to switch direction</div>
   </div>
 </div>
 
@@ -250,14 +270,14 @@ const ROUTES = [
   '90','91','92','93','94','95','96','97','98','99','100','101','102','103','104','105','106','107',
   '108','109','110','111','112','113','114','115','117','118','119','120','123','124','125','126',
   '127','128','129','130','131','132','133','139','150','201','204','205','206','310',
-  'T1','T2','T3','T4','T5','G','H','K','L','LUCY','BSO','MFO'
+  'T1','T2','T3','T4','T5','G','G1','H','K','L','LUCY','BSO','MFO'
 ];
 
 const ROUTE_ALIASES = {
   '10': ['10','T1'],   'T1': ['T1','10'],
   '11': ['11','T4'],   'T4': ['T4','11'],
   '13': ['13','T3'],   'T3': ['T3','13'],
-  '15': ['15','G'],
+  '15': ['15','G1','G'],   'G1': ['G1','15'],
   '34': ['34','T2'],   'T2': ['T2','34'],
   '36': ['36','T5'],   'T5': ['T5','36'],
   'G':  ['G','63'],    '63': ['63','G'],
@@ -275,41 +295,95 @@ const FETCH_TIMEOUT_MS   = 8000;
 const LAYOVER_TIMEOUT_MS = 45 * 60000;
 const MIN_SEEN           = 1;
 const LATE_BAD           = 6;
+// How far ahead (minutes) to show a scheduled block that hasn't started yet.
+// A block due out in 6 hours is noise; one due out soon is the whole point.
+const SCHED_LOOKAHEAD_MIN = 90;
 
 const API = {
   tv:      r => `https://www3.septa.org/api/TransitView/index.php?route=${encodeURIComponent(r)}`,
   alerts:  r => `https://www3.septa.org/api/Alerts/index.php?routes=bus_route_${encodeURIComponent(r)}`,
   detours: r => `https://www3.septa.org/api/BusDetours/${encodeURIComponent(r)}`,
 };
-const SCHED_BASE = 'https://deenersin-png.github.io/septa-scheduler/data';
+const GTFS_BASE          = 'https://deenersin-png.github.io/septa-gtfs/data';
+const GTFS_OBSERVED_BASE = 'https://deenersin-png.github.io/septa-gtfs/data-observed';
+// Run-number / pull-out-pull-in / paddle-PDF data (scraped SEPTA picks).
+// Absolute URL so it works both locally and when this page is hosted inside
+// the septa-scheduler repo itself.
+const PADDLE_BASE = 'https://deenersin-png.github.io/septa-scheduler/data';
 
 // ── STATE ────────────────────────────────────────────────────
-const state = { route: '', block: '', status: 'idle', lastUpdate: null };
+const state = { route: '', status: 'idle', lastUpdate: null };
 
-// ── SCHEDULE DATA ────────────────────────────────────────────
-const sched = { blockToRun: new Map(), loaded: false, loading: false, schedOrderByRoute: new Map() };
+// ── SCHEDULE DATA (SEPTA GTFS, via septa-gtfs pipeline) ───────
+const sched = { blockTrips: new Map(), loaded: false, schedOrderByRoute: new Map(), observed: new Map(), recoveryBlocks: new Map(), vehicleByBlock: new Map(), dirNames: {} };
+let schedRequestId = 0;
+
+// Run-number / pull-out-in / paddle-link data, keyed by block number. Loaded
+// once from the septa-scheduler pick CSVs (all districts for today's day
+// type) and reused across route changes.
+const paddle = { byBlock: new Map(), loaded: false, loading: false };
+
+// Holiday-aware day type. On July 4th, Thanksgiving, etc., SEPTA runs a
+// Sunday (or Saturday) schedule even though it's a weekday — the septa-gtfs
+// build publishes those exceptions (from GTFS calendar_dates.txt) as a
+// date→daytype map, which we consult before falling back to day-of-week.
+let calendarOverrides = {};
+
+function localISODate() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
 
 function getDayType() {
+  const ov = calendarOverrides[localISODate()];
+  if (ov) return ov;
   const d = new Date().getDay();
   if (d === 0) return 'sunday';
   if (d === 6) return 'saturday';
   return 'weekday';
 }
 
-function parseCSVLine(line) {
-  const result = []; let cur = '', inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') { inQ = !inQ; }
-    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
-    else { cur += c; }
-  }
-  result.push(cur);
-  return result;
+async function loadCalendarOverrides() {
+  try {
+    const res = await fetch(GTFS_BASE + '/calendar-overrides.json');
+    if (res.ok) calendarOverrides = await res.json();
+  } catch(e) {}
 }
 
+// "HH:MM:SS" (GTFS allows hour >= 24 for past-midnight trips) → minutes since midnight
+function timeStrToMin(t) {
+  const m = String(t || '').match(/(\d+):(\d+)/);
+  return m ? parseInt(m[1]) * 60 + parseInt(m[2]) : null;
+}
+
+// "12:43 AM" → minutes since midnight (used to order a block's two runs so
+// the pull-out run lists before the pull-in run).
+function clockToMin(t) {
+  const m = String(t || '').match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!m) return Infinity;
+  let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase();
+  if (ap === 'PM' && h !== 12) h += 12;
+  if (ap === 'AM' && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+// Minimal CSV parser (the septa-scheduler run data is CSV). Handles quoted
+// fields; headers taken from row 0.
+function parseCSVLine(line) {
+  const out = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') inQ = !inQ;
+    else if (c === ',' && !inQ) { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
 function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
+  const lines = String(text || '').trim().split(/\r?\n/);
   if (lines.length < 2) return [];
   const headers = parseCSVLine(lines[0]).map(h => h.trim());
   return lines.slice(1).map(line => {
@@ -320,108 +394,265 @@ function parseCSV(text) {
   });
 }
 
-async function loadScheduleData() {
-  if (sched.loaded || sched.loading) return;
-  sched.loading = true;
+// Loads the current route's trips (all blocks) for today's day-type from the
+// septa-gtfs static JSON. Lazy, per-route — reloaded on every route change.
+// Builds into local collections and commits atomically at the end, guarded by
+// a request id, so a stale in-flight load (e.g. from rapid route switching)
+// can't clobber a newer one or interleave writes into the same Map.
+async function loadScheduleData(route) {
+  const reqId = ++schedRequestId;
+  sched.loaded = false;
+  if (!route) return;
   try {
-    const manifest = await fetch(SCHED_BASE + '/manifest.json').then(r => r.json());
+    let data = null, matchedName = null;
+    for (const name of getAliases(route)) {
+      try {
+        const res = await fetch(GTFS_BASE + '/' + encodeURIComponent(name) + '.json');
+        if (res.ok) { data = await res.json(); matchedName = name; break; }
+      } catch(e) {}
+    }
+    if (!data || reqId !== schedRequestId) return;
+
+    const trips = data[getDayType()] || [];
+    const blockTrips = new Map();
+    const order = [];
+    for (const t of trips) {
+      const blk = String(t.block_id);
+      if (!blockTrips.has(blk)) { blockTrips.set(blk, []); order.push(blk); }
+      blockTrips.get(blk).push({ ...t, route });
+    }
+    if (reqId !== schedRequestId) return;
+
+    // Best-effort: the self-learned schedule published by septa-gtfs's
+    // poll-observed.js, keyed by exact GTFS trip_id. Missing file or too few
+    // samples just falls back to the GTFS time (see getObservedStart()).
+    let observed = new Map();
+    try {
+      const obsRes = await fetch(GTFS_OBSERVED_BASE + '/' + encodeURIComponent(matchedName) + '.json');
+      if (obsRes.ok) observed = new Map(Object.entries(await obsRes.json()));
+    } catch(e) {}
+    if (reqId !== schedRequestId) return;
+
+    // Best-effort: blocks the server-side poller currently knows are "at
+    // terminal" (isLive:false) for this route, right now — including ones
+    // this browser session never personally saw go quiet. Closes the gap
+    // where a bus was already in recovery before the page was opened.
+    let recoveryBlocks = new Map();
+    let vehicleByBlock = new Map(); // block → { vehicleId, ts } last-known bus on THIS route
+    try {
+      const stateRes = await fetch(GTFS_OBSERVED_BASE + '/state.json');
+      if (stateRes.ok) {
+        const stateJson = await stateRes.json();
+        for (const b of Object.values(stateJson.blocks || {})) {
+          if (b.routeId !== matchedName) continue;
+          // Last-known bus number for this block on this route — from ANY
+          // state entry (live or not), so a block that ran earlier today
+          // keeps its bus number while it sits scheduled. "None"/0 are junk.
+          const vid = String(b.vehicleId || '').trim();
+          if (vid && vid !== '0' && vid.toLowerCase() !== 'none') {
+            vehicleByBlock.set(String(b.blockId), { vehicleId: vid, ts: b.lastSeenAtMs || b.endedAtMs || 0 });
+          }
+          if (b.isLive === false) {
+            recoveryBlocks.set(String(b.blockId), {
+              direction: b.direction, vehicleId: b.vehicleId,
+              sequence: b.sequence, destination: b.destination,
+              endedAtMs: b.endedAtMs,
+            });
+          }
+        }
+      }
+    } catch(e) {}
+    if (reqId !== schedRequestId) return;
+
+    sched.blockTrips = blockTrips;
+    sched.schedOrderByRoute = new Map([[route, order]]); // trips arrive pre-sorted by start time
+    sched.observed = observed;
+    sched.recoveryBlocks = recoveryBlocks;
+    sched.vehicleByBlock = vehicleByBlock;
+    sched.dirNames = data.directions || {}; // GTFS direction_id → "Eastbound" etc.
+    sched.loaded = true;
+  } catch(e) { console.warn('Schedule load failed:', e); }
+}
+
+
+// The trip a block is on right now (in progress), else its next upcoming
+// trip, else its last trip of the day. Returns the raw GTFS trip object.
+function relevantTripObj(trips, nowMin) {
+  const withMin = trips
+    .map(t => ({ t, s: timeStrToMin(t.start), e: timeStrToMin(t.end) }))
+    .filter(x => x.s != null && x.e != null)
+    .sort((a, b) => a.s - b.s);
+  if (!withMin.length) return null;
+  for (const x of withMin) if (nowMin >= x.s && nowMin <= x.e) return x.t; // in progress
+  for (const x of withMin) if (x.s > nowMin) return x.t;                   // next upcoming
+  return withMin[withMin.length - 1].t;                                   // done — last of day
+}
+
+// The block scheduled immediately ahead of `block` in the SAME direction as
+// its current/next trip, at `nowMin`. Unlike a fixed morning-pull-out-order
+// approach (which goes stale once a morning leader finishes for the day
+// while you keep running), this reflects who is actually one headway ahead
+// of you right now — the block running the same-direction trip whose start
+// time is just before yours.
+function getCurrentSchedLeader(block, nowMin) {
+  const myTrips = sched.blockTrips.get(String(block));
+  if (!myTrips || !myTrips.length) return null;
+  const my = relevantTripObj(myTrips, nowMin);
+  if (!my || my.direction == null) return null;
+  const myStart = timeStrToMin(my.start);
+  if (myStart == null) return null;
+
+  let bestBlk = null, bestStart = -Infinity;
+  for (const [blk, trips] of sched.blockTrips) {
+    if (blk === String(block)) continue;
+    for (const t of trips) {
+      if (t.direction !== my.direction) continue;
+      const s = timeStrToMin(t.start);
+      if (s != null && s < myStart && s > bestStart) { bestStart = s; bestBlk = blk; }
+    }
+  }
+  return bestBlk;
+}
+
+// Mirror of getCurrentSchedLeader: the block scheduled immediately BEHIND
+// `block` in the same direction as its current/next trip, right now — the
+// same-direction trip whose start is just AFTER this block's. Dynamic, so a
+// shorter-variation bus that starts later and slots in behind a
+// longer-variation bus is correctly recognized as the follower (not locked
+// to a fixed morning pull-out order).
+function getCurrentSchedFollower(block, nowMin) {
+  const myTrips = sched.blockTrips.get(String(block));
+  if (!myTrips || !myTrips.length) return null;
+  const my = relevantTripObj(myTrips, nowMin);
+  if (!my || my.direction == null) return null;
+  const myStart = timeStrToMin(my.start);
+  if (myStart == null) return null;
+
+  let bestBlk = null, bestStart = Infinity;
+  for (const [blk, trips] of sched.blockTrips) {
+    if (blk === String(block)) continue;
+    for (const t of trips) {
+      if (t.direction !== my.direction) continue;
+      const s = timeStrToMin(t.start);
+      if (s != null && s > myStart && s < bestStart) { bestStart = s; bestBlk = blk; }
+    }
+  }
+  return bestBlk;
+}
+
+// When a block is sitting at the terminal, find its next scheduled pull-out:
+// the start time of the trip right after whichever trip it most recently
+// finished (or the first trip of the day if none have finished yet).
+function getNextDeparture(block, nowMin) {
+  const trips = sched.blockTrips.get(String(block));
+  if (!trips || !trips.length) return null;
+  const times = trips
+    .map(t => ({ s: timeStrToMin(t.start), e: timeStrToMin(t.end), tripId: t.trip_id, dir: t.direction, first: t.first, last: t.last }))
+    .filter(x => x.s != null && x.e != null)
+    .sort((a, b) => a.s - b.s);
+  if (!times.length) return null;
+  let lastFinishedIdx = -1;
+  times.forEach((x, i) => { if (x.e <= nowMin) lastFinishedIdx = i; });
+  const next = times[lastFinishedIdx + 1];
+  if (!next) return null;
+  const observedMin = getObservedStart(block, next.tripId);
+  return { dueOutMin: observedMin != null ? observedMin : next.s, tripId: next.tripId, scheduledMin: next.s,
+           direction: next.dir, first: next.first, last: next.last };
+}
+
+// Prefer the real-world observed average pull-out for this exact trip_id
+// (from septa-gtfs's poll-observed.js) once it has enough samples; otherwise
+// fall back to the plain GTFS scheduled time.
+function getObservedStart(block, tripId) {
+  const byDay = sched.observed.get(String(block));
+  if (!byDay) return null;
+  const slot = (byDay[getDayType()] || {})[tripId];
+  if (!slot || !slot.avgStart || (slot.samples || 0) < 5) return null;
+  return timeStrToMin(slot.avgStart);
+}
+
+// ── PADDLE / RUN DATA (septa-scheduler pick CSVs) ────────────
+// Builds paddle.byBlock: block → { poTime, piTime, runs:[{runno, link}] }.
+// A block can be shared by two runs (driver pulls out, is relieved, a second
+// operator pulls in) — so the pull-OUT time is the segment marked potype 'O'
+// and the pull-IN time is the segment marked pitype 'I', each appearing on a
+// different run; both run numbers are collected. Loaded once, all districts.
+async function loadPaddleData() {
+  if (paddle.loaded || paddle.loading) return;
+  paddle.loading = true;
+  try {
+    const manifest = await fetch(PADDLE_BASE + '/manifest.json').then(r => r.json());
     const day = getDayType();
     const dayLabel = day.charAt(0).toUpperCase() + day.slice(1);
+    const byBlock = new Map();
 
-    await Promise.allSettled(manifest.districts.map(async district => {
-      if (!district.days.includes(dayLabel)) return;
+    await Promise.allSettled((manifest.districts || []).map(async district => {
+      if (!district.days || !district.days.includes(dayLabel)) return;
       const slug = district.name;
-      const [schedText, pdfsText] = await Promise.all([
-        fetch(SCHED_BASE + '/' + slug + '/' + day + '.csv').then(r => r.text()),
-        fetch(SCHED_BASE + '/' + slug + '/pdfs.csv').then(r => r.text()),
-      ]);
-      const runToPad = new Map();
+      let schedText = '', pdfsText = '';
+      try {
+        [schedText, pdfsText] = await Promise.all([
+          fetch(PADDLE_BASE + '/' + slug + '/' + day + '.csv').then(r => r.ok ? r.text() : ''),
+          fetch(PADDLE_BASE + '/' + slug + '/pdfs.csv').then(r => r.ok ? r.text() : ''),
+        ]);
+      } catch(e) { return; }
+
+      // runno → paddle-PDF link, for today's day only
+      const runLink = new Map();
       for (const row of parseCSV(pdfsText)) {
-        if (!row.runno) continue;
-        const rowDay = (row.day || '').toLowerCase();
-        if (rowDay && rowDay !== day) continue;
-        runToPad.set(String(row.runno), { mob: row.moblink || '', pc: row.pclink || '' });
+        if (!row.runno || (row.day || '') !== dayLabel) continue;
+        const link = (row.moblink || row.pclink || '').trim();
+        if (link) runLink.set(String(row.runno), link);
       }
+
       for (const row of parseCSV(schedText)) {
-        if (!row.runno) continue;
-        const pad = runToPad.get(String(row.runno)) || {};
+        const runno = String(row.runno || '').trim();
+        if (!runno) continue;
         for (let i = 1; i <= 10; i++) {
-          const blk = (row['b' + i] || '').trim();
-          if (blk && blk !== '0') {
-            const routeRaw = (row['r' + i] || '').trim();
-            const route = routeRaw.split('-')[0].trim();
-            const pullOut = (row['pot' + i] || '').trim();
-            const entry = {
-              runno: row.runno, mob: pad.mob || '', pc: pad.pc || '',
-              route, pullOut,
-              startMin:  parsePullOutTime(row.start  || ''),
-              finishMin: parsePullOutTime(row.finish || ''),
-            };
-            if (!sched.blockToRun.has(blk)) sched.blockToRun.set(blk, []);
-            sched.blockToRun.get(blk).push(entry);
+          const b = (row['b' + i] || '').trim();
+          if (!b || b === '0') continue;
+          if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', runs: [] });
+          const rec = byBlock.get(b);
+          const potype = (row['potype' + i] || '').trim().toUpperCase();
+          const pitype = (row['pitype' + i] || '').trim().toUpperCase();
+          const pot = (row['pot' + i] || '').trim();
+          const pit = (row['pit' + i] || '').trim();
+          if (potype === 'O' && pot) rec.poTime = pot; // depot pull-out
+          if (pitype === 'I' && pit) rec.piTime = pit; // depot pull-in
+          if (!rec.runs.some(r => r.runno === runno)) {
+            rec.runs.push({ runno, link: runLink.get(runno) || '', sortMin: clockToMin(pot) });
           }
         }
       }
     }));
 
-    // build scheduled order per route: sort blocks by their earliest pull-out time
-    const routeBlocks = new Map();
-    for (const [blk, runs] of sched.blockToRun) {
-      const route = runs[0] && runs[0].route;
-      if (!route) continue;
-      const minT = Math.min(...runs.map(r => parsePullOutTime(r.pullOut)));
-      if (!routeBlocks.has(route)) routeBlocks.set(route, []);
-      routeBlocks.get(route).push({ blk, t: minT });
-    }
-    sched.schedOrderByRoute = new Map();
-    for (const [route, entries] of routeBlocks) {
-      entries.sort((a, b) => a.t - b.t);
-      sched.schedOrderByRoute.set(route, entries.map(e => e.blk));
-    }
-    sched.loaded = true;
-  } catch(e) { console.warn('Schedule load failed:', e); }
-  sched.loading = false;
+    for (const rec of byBlock.values()) rec.runs.sort((a, b) => a.sortMin - b.sortMin);
+    paddle.byBlock = byBlock;
+    paddle.loaded = true;
+    // Refresh so the newly-available run info shows without waiting a full tick.
+    if (state.route && !ticking) { lastHTML = ''; tick(); }
+  } catch(e) { console.warn('Paddle load failed:', e); }
+  paddle.loading = false;
 }
 
-// Parse time out of "2023-10-11 12:43 AM" or "12:43 AM" → minutes since midnight
-function parsePullOutTime(t) {
-  if (!t) return Infinity;
-  const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!m) return Infinity;
-  let h = parseInt(m[1]);
-  const min = parseInt(m[2]);
-  const ampm = m[3].toUpperCase();
-  if (ampm === 'PM' && h !== 12) h += 12;
-  if (ampm === 'AM' && h === 12) h = 0;
-  return h * 60 + min;
-}
-
-// Return the run entry for this block that is active right now.
-// A block may have two runs (driver relief) that overlap 5-30 min.
-// Pick the run whose start–finish window contains the current time;
-// when multiple match (overlap), prefer the one that started latest.
-function getCurrentRunInfo(blk) {
-  const runs = sched.blockToRun.get(String(blk));
-  if (!runs || !runs.length) return null;
-  if (runs.length === 1) return runs[0];
-  const now = new Date().getHours() * 60 + new Date().getMinutes();
-  const active = runs.filter(r => {
-    const s = r.startMin, f = r.finishMin;
-    if (s === Infinity || f === Infinity) return false;
-    // handle runs that span midnight (finish < start)
-    return f < s ? (now >= s || now <= f) : (now >= s && now <= f);
-  });
-  if (!active.length) return runs[0]; // outside all windows, fallback
-  return active.reduce((best, r) => r.startMin > best.startMin ? r : best, active[0]);
-}
-
-function getSchedLeader(block) {
-  const runs = sched.blockToRun.get(block);
-  const route = runs && runs[0] && runs[0].route;
-  if (!route) return null;
-  const order = sched.schedOrderByRoute.get(route) || [];
-  const idx = order.indexOf(block);
-  return idx > 0 ? order[idx - 1] : null;
+// HTML for the run / pull-out-in line under a card. Empty if this block has
+// no pick data.
+function paddleRowHtml(blk) {
+  const rec = paddle.byBlock.get(String(blk));
+  if (!rec) return '';
+  let h = '<div class="paddle-row">';
+  if (rec.poTime || rec.piTime) {
+    h += '<span class="po-pi">';
+    if (rec.poTime) h += 'PO ' + esc(rec.poTime);
+    if (rec.poTime && rec.piTime) h += ' · ';
+    if (rec.piTime) h += 'PI ' + esc(rec.piTime);
+    h += '</span>';
+  }
+  for (const r of rec.runs) {
+    if (r.link) h += '<a class="run-chip" href="' + esc(r.link) + '" target="_blank" rel="noopener">RUN ' + esc(r.runno) + '</a>';
+    else        h += '<span class="run-chip nolink">RUN ' + esc(r.runno) + '</span>';
+  }
+  return h + '</div>';
 }
 
 // ── BUS CACHE ────────────────────────────────────────────────
@@ -458,6 +689,7 @@ function updateCache(liveBuses, routeId) {
       lastSeenAt:   now,
       isLayover:    false,
       layoverSince: null,
+      departedAt:   ex.isLayover ? now : (ex.departedAt || null),
       seenCount:    (ex.seenCount || 0) + 1,
     });
   }
@@ -467,22 +699,316 @@ function updateCache(liveBuses, routeId) {
     if (c.routeId !== routeId) continue;
     if ((now - c.lastSeenAt) > LAYOVER_TIMEOUT_MS) { busCache.delete(key); continue; }
     if (!c.isLayover && c.seenCount >= MIN_SEEN) {
-      busCache.set(key, { ...c, isLayover: true, layoverSince: now });
+      busCache.set(key, { ...c, isLayover: true, layoverSince: now, departedAt: null });
     }
   }
 }
 
+// SEPTA reports direction inconsistently across endpoints — per-route
+// TransitView says "Westbound", the all-routes feed (which the poller and
+// thus recovery/state data come from) says "WestBound". Canonicalize so the
+// same physical direction groups onto one page and direction comparisons
+// (overtake / sched-leader) don't treat the two spellings as different.
+function canonDir(d) {
+  const l = String(d || '').toLowerCase();
+  if (l.includes('east'))  return 'Eastbound';
+  if (l.includes('west'))  return 'Westbound';
+  if (l.includes('north')) return 'Northbound';
+  if (l.includes('south')) return 'Southbound';
+  return String(d || 'Unknown');
+}
+
 function mergeLiveAndCache(liveBuses, routeId) {
-  const merged = [...liveBuses];
+  // Normalize live directions in place (same objects are reused as the
+  // dir-map source downstream, so they must be canonical too).
+  const merged = liveBuses.map(b => { b.Direction = canonDir(b.Direction); return b; });
   for (const [, c] of busCache) {
     if (!c.isLayover || c.routeId !== routeId) continue;
     merged.push({
-      BlockID: c.blockId, VehicleID: c.vehicleId, Direction: c.direction,
+      BlockID: c.blockId, VehicleID: c.vehicleId, Direction: canonDir(c.direction),
       next_stop_sequence: c.sequence, destination: c.destination,
       Offset: String(c.offset), late: String(c.late),
       next_stop_name: null, estimated_seat_availability: '',
       _isLayover: true, _layoverSince: c.layoverSince,
     });
+  }
+  return merged;
+}
+
+// Fill in any blocks the server-side poller (poll-observed.js) currently
+// knows are at the terminal for this route but that this browser session
+// never personally saw go quiet (e.g. it was already in recovery before the
+// page was opened). Only adds ones not already covered by the live feed or
+// this session's own busCache ghosts, so fresher local data always wins.
+function mergeServerRecovery(merged) {
+  const known = new Set(merged.map(b => String(b.BlockID || '')));
+  const now = Date.now();
+  for (const [blockId, r] of sched.recoveryBlocks) {
+    if (known.has(blockId)) continue;
+    if (!r.endedAtMs || (now - r.endedAtMs) > LAYOVER_TIMEOUT_MS) continue; // stale — same cutoff as local busCache ghosts
+    merged.push({
+      BlockID: blockId, VehicleID: r.vehicleId, Direction: canonDir(r.direction),
+      next_stop_sequence: r.sequence, destination: r.destination,
+      Offset: '0', late: '0',
+      next_stop_name: null, estimated_seat_availability: '',
+      _isLayover: true, _layoverSince: r.endedAtMs,
+    });
+  }
+  return merged;
+}
+
+// ── SCHEDULED-ONLY BLOCKS (COMPARE build) ────────────────────
+// GTFS carries block_id + direction (0/1) but no vehicle/bus number — that
+// only ever comes from the live feed. So we learn the GTFS-direction →
+// live-Direction-string mapping (e.g. 0 → "Eastbound") from whichever live
+// buses are present, by matching each live bus's own trip id back to GTFS.
+function buildGtfsDirMap(liveBuses) {
+  const map = new Map(); // gtfs direction (0/1) -> live Direction string
+  for (const b of liveBuses) {
+    if (!b.Direction || b.trip == null) continue;
+    const trips = sched.blockTrips.get(String(b.BlockID || ''));
+    if (!trips) continue;
+    const t = trips.find(x => String(x.trip_id) === String(b.trip));
+    if (t && t.direction != null && !map.has(t.direction)) map.set(t.direction, b.Direction);
+  }
+  return map;
+}
+
+// Is a last-known bus number recent enough to still be this block's likely
+// assignment? Buses are reassigned to blocks daily, so a number from a
+// PREVIOUS day is stale (→ "pending"). But an owl run a few hours ago —
+// e.g. 12:51 AM when it's now 5 AM — is still the same bus, even though a
+// fixed "service day" clock line would call it yesterday. So: fresh if it's
+// the same local calendar day, OR within the last ~6 hours (covers owl runs
+// crossing midnight). Only a genuinely old, previous-day number is rejected.
+function isVehicleFresh(ts) {
+  if (!ts) return false;
+  if ((Date.now() - ts) <= 6 * 3600000) return true;
+  return new Date(ts).toDateString() === new Date().toDateString();
+}
+
+// Best-effort bus number for a block: this session's live cache first, then
+// the poller's last-known bus for it (live or not). Returns '' (→ "pending")
+// only when the newest number we have is stale (a previous day's assignment).
+function knownVehicleFor(blk) {
+  const c = busCache.get('blk_' + blk);
+  if (c && c.vehicleId && isVehicleFresh(c.lastSeenAt)) return c.vehicleId;
+  const v = sched.vehicleByBlock.get(String(blk));
+  if (v && v.vehicleId && isVehicleFresh(v.ts)) return v.vehicleId;
+  return '';
+}
+
+// Where a block sits in its GTFS day at `nowMin`:
+//  not_started        — before its first trip (with due-out time)
+//  layover_expected   — between two trips, at terminal (with next due-out)
+//  in_service_expected— a trip should be running now but there's no live data
+//  done               — finished its last trip
+function scheduledBlockStatus(blk, nowMin) {
+  const trips = (sched.blockTrips.get(String(blk)) || [])
+    .map(t => ({ s: timeStrToMin(t.start), e: timeStrToMin(t.end), dir: t.direction, headsign: t.headsign, first: t.first, last: t.last }))
+    .filter(x => x.s != null && x.e != null)
+    .sort((a, b) => a.s - b.s);
+  if (!trips.length) return null;
+  const first = trips[0], last = trips[trips.length - 1];
+  if (nowMin < first.s) return { state: 'not_started', dueOutMin: first.s, trip: first };
+  if (nowMin > last.e)  return { state: 'done', trip: last };
+  for (let i = 0; i < trips.length; i++) {
+    if (nowMin >= trips[i].s && nowMin <= trips[i].e) return { state: 'in_service_expected', trip: trips[i] };
+    if (i < trips.length - 1 && nowMin > trips[i].e && nowMin < trips[i + 1].s)
+      return { state: 'layover_expected', dueOutMin: trips[i + 1].s, trip: trips[i + 1] };
+  }
+  return { state: 'done', trip: last };
+}
+
+// Inject a placeholder card for every scheduled block on this route that has
+// no live/layover/recovery representation yet — so the operator sees at
+// least "Block #### is scheduled" (plus bus number if we've ever seen it)
+// even with no SEPTA live data. Blocks already covered by real data are
+// skipped, so the moment a bus goes live its real card replaces this one.
+function mergeScheduledBlocks(merged, liveBuses) {
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const known = new Set(merged.map(b => String(b.BlockID || '')));
+  const dirMap = buildGtfsDirMap(liveBuses);
+
+  for (const blk of sched.blockTrips.keys()) {
+    if (known.has(blk)) continue;
+    const st = scheduledBlockStatus(blk, nowMin);
+    if (!st || st.state === 'done') continue;
+    if (st.state === 'not_started' && (st.dueOutMin - nowMin) > SCHED_LOOKAHEAD_MIN) continue;
+
+    // Terminal-arrival time for the layover timer: the poller's real ended-at
+    // if we have it, else the scheduled end of the last completed trip.
+    let arrivedMs = null;
+    if (st.state === 'layover_expected') {
+      arrivedMs = (sched.recoveryBlocks.get(blk) || {}).endedAtMs || null;
+      if (!arrivedMs) {
+        const ends = (sched.blockTrips.get(blk) || []).map(t => timeStrToMin(t.end)).filter(x => x != null).sort((a, b) => a - b);
+        let lastEnd = null; ends.forEach(e => { if (e <= nowMin) lastEnd = e; });
+        if (lastEnd != null) { const d = new Date(); d.setHours(0, 0, 0, 0); arrivedMs = d.getTime() + lastEnd * 60000; }
+      }
+    }
+
+    // Direction name straight from GTFS (directions.txt) first — always
+    // available, so scheduled blocks get a real "Eastbound"/"Westbound" even
+    // when no live bus is out that way. Fall back to the live-learned map,
+    // then a last-resort label.
+    const dirStr = (sched.dirNames && sched.dirNames[st.trip.dir]) ||
+                   dirMap.get(st.trip.dir) ||
+                   (st.trip.dir != null ? 'Direction ' + st.trip.dir : 'Scheduled');
+    merged.push({
+      BlockID: blk,
+      VehicleID: knownVehicleFor(blk),
+      Direction: canonDir(dirStr),
+      next_stop_sequence: 0,
+      destination: st.trip.headsign || '',
+      Offset: '0', late: '0',
+      next_stop_name: null, estimated_seat_availability: '',
+      _scheduledOnly: true,
+      _schedState: st.state,
+      _dueOutMin: st.dueOutMin != null ? st.dueOutMin : null,
+      _overdueMin: st.dueOutMin != null ? Math.max(0, nowMin - st.dueOutMin) : 0,
+      _firstStop: st.trip.first || '',
+      _lastStop: st.trip.last || '',
+      // When this block already ran and is between trips, its terminal-arrival
+      // time drives the layover timer on the yellow card.
+      _layoverSince: arrivedMs,
+    });
+  }
+  return merged;
+}
+
+// A bus that finished a trip and went out of service (layover ghost / server
+// recovery) is really "about to run its NEXT trip". So reposition it onto the
+// direction of that next trip and render it as a scheduled/next-trip card —
+// it disappears from the direction it just finished and shows on the one it's
+// about to run, starting from that terminal. Blocks with no next trip today
+// are dropped (done for the day). Live buses pass through untouched.
+function annotateLayovers(merged) {
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const out = [];
+  for (const bus of merged) {
+    if (!bus._isLayover) { out.push(bus); continue; }
+    const blk = String(bus.BlockID || '');
+    const due = getNextDeparture(blk, nowMin);
+    if (!due) continue; // finished for the day → remove entirely
+
+    bus._isLayover     = false;
+    bus._scheduledOnly = true;
+    bus._schedState    = 'layover_expected';
+    bus._dueOutMin     = due.dueOutMin;
+    bus._overdueMin    = Math.max(0, nowMin - due.dueOutMin);
+    bus._firstStop     = due.first || '';
+    bus._lastStop      = due.last  || '';
+    bus.next_stop_sequence = 0; // it's at the START of its next trip — anchor it there in the ordering
+    const dirName = (sched.dirNames && sched.dirNames[due.direction]) ||
+                    (due.direction != null ? 'Direction ' + due.direction : bus.Direction);
+    bus.Direction = canonDir(dirName);
+    out.push(bus);
+  }
+  return out;
+}
+
+// The scheduled start time relevant to this bus's current state: its next
+// due-out trip if it's parked at a terminal, or the trip presently underway
+// if it's active. This is what lets two different blocks' "lateness" be
+// compared against a real, current scheduled gap instead of a fixed number.
+function relevantTripStart(bus, block, nowMin) {
+  if (bus._isLayover) {
+    const due = getNextDeparture(block, nowMin);
+    return due ? due.dueOutMin : null;
+  }
+  const trips = sched.blockTrips.get(String(block));
+  if (!trips || !trips.length) return null;
+
+  // Prefer the bus's own live-reported trip id (TransitView's `trip` field,
+  // matches GTFS trip_id exactly) — an exact match, no guessing. Guessing
+  // "which trip is this by wall-clock time" is exactly what broke: a bus
+  // running badly early/late (the whole point of this feature) can have
+  // already-passed a later trip's scheduled start time while it's actually
+  // still running an earlier one, especially if it and its
+  // leader/follower have run different numbers of trips so far today.
+  const tripId = bus.trip != null ? String(bus.trip) : null;
+  if (tripId) {
+    const exact = trips.find(t => String(t.trip_id) === tripId);
+    if (exact) {
+      const s = timeStrToMin(exact.start);
+      if (s != null) return s;
+    }
+  }
+
+  // Fallback (no trip id on the live bus, or it's not in today's GTFS):
+  // last trip whose scheduled start has passed.
+  const starts = trips.map(t => timeStrToMin(t.start)).filter(s => s != null).sort((a, b) => a - b);
+  if (!starts.length) return null;
+  let idx = -1;
+  starts.forEach((s, i) => { if (s <= nowMin) idx = i; });
+  return idx >= 0 ? starts[idx] : starts[0];
+}
+
+// Precise leader/follower overtake: how many minutes has the scheduled
+// follower gained on this block, using each side's own live lateness
+// (SEPTA's `late` field) against the scheduled gap between the trip each of
+// them is currently running.
+//   overtake = leaderLateMin - scheduledHeadwayMin - followerLateMin
+//
+// Only computed when BOTH are currently active (actually out on the road).
+// If the leader is parked at a terminal, "the trip it's currently on" isn't
+// a thing yet — relevantTripStart() would have to use its *next* (future)
+// trip, while an active follower's relevantTripStart is whatever trip it's
+// *already* running now. Those are two different points in time, and
+// subtracting them can be off by a whole trip cycle (seen live: showed a
+// leader "50-60m behind" a follower that had simply pulled out normally).
+// For a parked leader, `_flag` (below, from departedAt) already answers the
+// only question that's actually answerable — did the follower leave yet —
+// without needing any of this time-math.
+function annotateOvertake(merged) {
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const byBlock = new Map();
+  for (const b of merged) { byBlock.set(String(b.BlockID || ''), b); b._overtake = null; b._passedLeader = null; }
+
+  for (const bus of merged) {
+    if (bus._isLayover || bus._scheduledOnly) continue;
+    const blk = String(bus.BlockID || '');
+    const followerBlk = getCurrentSchedFollower(blk, nowMin);
+    if (!followerBlk) continue;
+    const followerBus = byBlock.get(followerBlk);
+    if (!followerBus || followerBus._isLayover || followerBus._scheduledOnly) continue;
+    // A block alternates direction every trip all day — "adjacent in
+    // pull-out order" doesn't mean they're currently going the same way.
+    // Comparing "who's ahead" between two buses headed opposite directions
+    // is meaningless (seen live: produced a negative "headway" and a bogus
+    // overtake number for two buses running Eastbound vs. Westbound).
+    if (bus.Direction !== followerBus.Direction) continue;
+
+    const leaderStart   = relevantTripStart(bus, blk, nowMin);
+    const followerStart = relevantTripStart(followerBus, followerBlk, nowMin);
+    if (leaderStart == null || followerStart == null) continue;
+
+    const headwayMin = followerStart - leaderStart;
+    // The leader/follower pairing is fixed once from each block's very
+    // first pull-out of the day — over a long service day, two blocks'
+    // relative timing can drift and even invert. If the follower's current
+    // trip doesn't actually start after the leader's, "the follower should
+    // be behind" isn't true right now, and there's nothing meaningful to
+    // compare (seen live: a -38m "headway" from two trips that had crossed
+    // over by evening, producing a bogus ~28m overtake).
+    if (headwayMin <= 0) continue;
+
+    const leaderLate   = parseInt(bus.late) || 0;
+    const followerLate = parseInt(followerBus.late) || 0;
+    const overtakeMin  = leaderLate - headwayMin - followerLate;
+
+    if (overtakeMin > 0) {
+      const fVid = String(followerBus.VehicleID || '').trim();
+      const lVid = String(bus.VehicleID || '').trim();
+      const fBus = (fVid && fVid !== '0') ? fVid : (knownVehicleFor(followerBlk) || 'n/a');
+      const lBus = (lVid && lVid !== '0') ? lVid : (knownVehicleFor(blk) || 'n/a');
+      // On the leader's card: its follower is X min ahead (red).
+      bus._overtake = { followerBlk, followerBus: fBus, overtakeMin, headwayMin };
+      // Mirror on the follower's card: its leader is X min behind (yellow) —
+      // same event, opposite perspective.
+      followerBus._passedLeader = { leaderBlk: blk, leaderBus: lBus, overtakeMin };
+    }
   }
   return merged;
 }
@@ -598,43 +1124,176 @@ async function safeGetWithAliases(urlBuilder, route) {
   return [];
 }
 
-// ── CLASSIFY ─────────────────────────────────────────────────
-function classify(merged, block) {
-  if (!block || block.length < 3) return { found: false };
-  const myBus = merged.find(b => String(b.BlockID || '') === block);
-  if (!myBus) return { found: false };
+// ── SCHED LEADER (every bus gets its own, no search box needed) ──
+// Attaches each bus's own scheduled-leader block/bus/state directly onto
+// the bus object, the same way annotateOvertake()/annotateLayovers() do —
+// so every card in the list shows its own status, not just one you'd have
+// had to type a block number in to see.
+// The last-stop name of the trip a live bus is currently running (by its live
+// GTFS trip id). Two buses' raw stop-sequence numbers are only comparable
+// when they're on the same trip variation (same endpoint).
+function liveTripLast(bus) {
+  const trips = sched.blockTrips.get(String(bus.BlockID || ''));
+  if (!trips || bus.trip == null) return null;
+  const t = trips.find(x => String(x.trip_id) === String(bus.trip));
+  return t ? (t.last || null) : null;
+}
 
-  const dir = myBus.Direction || '';
-  const same = merged.filter(b => b.Direction === dir);
-  same.sort((a, b) => (b.next_stop_sequence || 0) - (a.next_stop_sequence || 0));
+function annotateSchedLeader(merged) {
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const byBlock = new Map();
+  for (const b of merged) byBlock.set(String(b.BlockID || ''), b);
 
-  const myPos = same.findIndex(b => String(b.BlockID || '') === block);
+  for (const bus of merged) {
+    bus._schedLeaderBlk = null;
+    bus._schedLeaderBus = null;
+    bus._schedLeaderState = null;
+    bus._schedLeaderDueMin = null;
 
-  const schedLeaderBlk = getSchedLeader(block);
-  const schedLeaderBus = schedLeaderBlk
-    ? merged.find(b => String(b.BlockID || '') === schedLeaderBlk) || null
-    : null;
-  let schedLeaderState = null;
-  if (schedLeaderBlk) {
-    if (!schedLeaderBus) {
-      schedLeaderState = 'missing';
+    // Scheduled-only placeholder cards carry their own "SCHEDULED" status
+    // already and have no live position, so don't compute a leader row for
+    // them (its own row would just repeat the schedule info).
+    if (bus._scheduledOnly) continue;
+
+    const blk = String(bus.BlockID || '');
+    // Dynamic "who's actually one headway ahead right now" leader, not the
+    // fixed morning pull-out order — so a morning leader that's since
+    // finished for the day no longer shows up as this bus's leader.
+    const schedLeaderBlk = getCurrentSchedLeader(blk, nowMin);
+    if (!schedLeaderBlk) continue;
+    bus._schedLeaderBlk = schedLeaderBlk;
+    const schedLeaderBus = byBlock.get(schedLeaderBlk) || null;
+    bus._schedLeaderBus = schedLeaderBus;
+
+    if (schedLeaderBus && schedLeaderBus._scheduledOnly) {
+      // Leader is in the schedule but has no live data — reflect WHY, rather
+      // than pretending everything's fine. The 'no_data' case (a trip that
+      // should be running now with nothing on the feed) is the important
+      // one: the leader's driver may not have shown up / logged in.
+      if (schedLeaderBus._schedState === 'in_service_expected') {
+        bus._schedLeaderState = 'no_data';
+      } else { // not_started / layover_expected — has a known next pull-out
+        bus._schedLeaderState = 'not_due_yet';
+        bus._schedLeaderDueMin = schedLeaderBus._dueOutMin;
+      }
+    } else if (!schedLeaderBus) {
+      // Not found live or as a layover ghost. That only means "missing" if
+      // it's actually overdue — a block that simply hasn't pulled out for
+      // its first trip yet (and so was never seen live, so can never be
+      // ghosted either) looks identical from here unless we check the
+      // schedule: it's not a problem, it's just not due out yet.
+      const due = getNextDeparture(schedLeaderBlk, nowMin);
+      if (due && due.dueOutMin > nowMin) {
+        bus._schedLeaderState = 'not_due_yet';
+        bus._schedLeaderDueMin = due.dueOutMin;
+      } else if (!due) {
+        // No next departure at all — it's finished all its scheduled trips
+        // for the day, not "missing." (getNextDeparture returns null once
+        // there's no trip left after the last one that's already ended.)
+        bus._schedLeaderState = 'done_for_day';
+      } else {
+        bus._schedLeaderState = 'missing';
+      }
+    } else if (bus.Direction !== schedLeaderBus.Direction) {
+      // Different direction right now (a block flips direction every trip
+      // all day) — comparing stop-sequence position across directions is
+      // meaningless, same class of bug fixed in annotateOvertake(). Default
+      // to the no-tag "ahead" state rather than risk a false "PASSED" alarm.
+      bus._schedLeaderState = 'ahead';
     } else {
-      const mySeq = parseInt(same[myPos].next_stop_sequence) || 0;
-      const lSeq  = parseInt(schedLeaderBus.next_stop_sequence) || 0;
-      schedLeaderState = lSeq >= mySeq ? 'ahead' : 'behind';
+      // Both live, same direction. Raw next_stop_sequence is only comparable
+      // when they're on the SAME trip variation (same endpoint). A leader on
+      // a shorter variation — about to complete its block and go out of
+      // service — would otherwise look "passed" just because the follower's
+      // longer trip has more stops. Different endpoints → stay neutral.
+      const myLast = liveTripLast(bus), lLast = liveTripLast(schedLeaderBus);
+      if (myLast && lLast && myLast !== lLast) {
+        bus._schedLeaderState = 'ahead';
+      } else {
+        const mySeq = parseInt(bus.next_stop_sequence) || 0;
+        const lSeq  = parseInt(schedLeaderBus.next_stop_sequence) || 0;
+        bus._schedLeaderState = lSeq >= mySeq ? 'ahead' : 'behind';
+      }
     }
   }
+  return merged;
+}
 
-  return {
-    found: true, direction: dir,
-    leaders:         same.slice(0, myPos),
-    you:             same[myPos],
-    followers:       same.slice(myPos + 1),
-    immediateLeader: myPos > 0 ? same[myPos - 1] : null,
-    schedLeaderBlk,
-    schedLeaderBus,
-    schedLeaderState,
+// For one same-direction trip (dir, startMin) of `block`, the block running
+// the trip that starts just before it (its leader for that leg) + that trip.
+function leaderForTrip(block, dir, startMin) {
+  let bestBlk = null, bestStart = -Infinity, bestTrip = null;
+  for (const [blk, trips] of sched.blockTrips) {
+    if (blk === String(block)) continue;
+    for (const t of trips) {
+      if (t.direction !== dir) continue;
+      const s = timeStrToMin(t.start);
+      if (s != null && s < startMin && s > bestStart) { bestStart = s; bestBlk = blk; bestTrip = t; }
+    }
+  }
+  return bestBlk ? { block: bestBlk, startMin: bestStart, trip: bestTrip } : null;
+}
+
+// Full leader history for a bus across its day: past / current / next leaders,
+// one row per trip, deduped per section. Attached as bus._leaderTimeline.
+function annotateLeaderTimeline(merged) {
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const byBlock = new Map();
+  for (const b of merged) byBlock.set(String(b.BlockID || ''), b);
+
+  const busNoOf = (blk) => {
+    const live = byBlock.get(blk);
+    if (live && !live._scheduledOnly) {
+      const v = String(live.VehicleID || '').trim();
+      if (v && v !== '0') return v;
+    }
+    return knownVehicleFor(blk) || 'n/a';
   };
+  const liveStatusOf = (blk) => {
+    const live = byBlock.get(blk);
+    if (!live || live._scheduledOnly) return 'Scheduled';
+    const late = parseInt(live.late) || 0;
+    if (late === 0) return 'On time';
+    if (late < 0)   return Math.abs(late) + 'm early';
+    return '+' + late + 'm late';
+  };
+
+  for (const bus of merged) {
+    bus._leaderTimeline = null;
+    const block = String(bus.BlockID || '');
+    const trips = (sched.blockTrips.get(block) || [])
+      .map(t => ({ ...t, s: timeStrToMin(t.start), e: timeStrToMin(t.end) }))
+      .filter(t => t.s != null && t.e != null)
+      .sort((a, b) => a.s - b.s);
+    if (!trips.length) continue;
+
+    // Current trip = the one in progress; for a scheduled/out-of-service bus
+    // there's none in progress, so it's the NEXT upcoming trip — i.e. the trip
+    // it's about to run — which makes its "current leader" the leader of that
+    // next trip, as requested.
+    let curIdx = trips.findIndex(t => nowMin >= t.s && nowMin <= t.e);
+    if (curIdx < 0) curIdx = trips.findIndex(t => t.s > nowMin);
+    if (curIdx < 0) curIdx = trips.length - 1;
+
+    const past = [], next = []; let current = null;
+    trips.forEach((t, i) => {
+      const ldr = leaderForTrip(block, t.direction, t.s);
+      if (!ldr) return;
+      const row = {
+        blk: ldr.block,
+        dir: dirShort((sched.dirNames && sched.dirNames[t.direction]) || String(t.direction)),
+        start: ldr.startMin,
+        bus: busNoOf(ldr.block),
+        status: i < curIdx ? 'Past' : i > curIdx ? 'Scheduled' : liveStatusOf(ldr.block),
+      };
+      if (i < curIdx) past.push(row);
+      else if (i === curIdx) current = row;
+      else next.push(row);
+    });
+    const dedupe = arr => { const seen = new Set(); return arr.filter(r => !seen.has(r.blk) && seen.add(r.blk)); };
+    bus._leaderTimeline = { past: dedupe(past), current, next: dedupe(next) };
+  }
+  return merged;
 }
 
 // ── RENDER ───────────────────────────────────────────────────
@@ -647,14 +1306,15 @@ function setContent(html) {
   document.getElementById('content').innerHTML = html;
 }
 
-function renderMain(merged, block, route) {
+function renderMain(merged, route) {
   document.getElementById('routeBar').classList.remove('hidden');
   document.getElementById('routeNum').textContent = route;
 
-  const live = merged.filter(b => !b._isLayover).length;
-  const atTerm = merged.filter(b => b._isLayover).length;
+  const live      = merged.filter(b => !b._isLayover && !b._scheduledOnly).length;
+  const atTerm    = merged.filter(b => b._isLayover).length;
+  const schedOnly = merged.filter(b => b._scheduledOnly).length;
 
-  if (live === 0 && atTerm === 0) {
+  if (live === 0 && atTerm === 0 && schedOnly === 0) {
     document.getElementById('busCount').textContent = 'No active buses';
     document.getElementById('alertArea').innerHTML = '';
     setContent('<div class="msg"><div class="icon">🚌</div><div class="main">No buses on Route ' + esc(route) + '</div><div class="sub">Route may not be running right now</div></div>');
@@ -663,108 +1323,69 @@ function renderMain(merged, block, route) {
 
   const parts = [live + ' active'];
   if (atTerm > 0) parts.push(atTerm + ' at terminal');
+  if (schedOnly > 0) parts.push(schedOnly + ' scheduled');
   document.getElementById('busCount').textContent = parts.join(' · ');
+  document.getElementById('alertArea').innerHTML = '';
 
-  const cl = classify(merged, block);
   const anim = isFirstRender;
   isFirstRender = false;
 
-  if (!cl.found) {
-    if (block && block.length >= 3) {
-      showBanner('info', 'ℹ', 'Block ' + esc(block) + ' not in service — showing all Route ' + esc(route) + ' buses');
-    } else {
-      document.getElementById('alertArea').innerHTML = '';
-    }
-    setContent(buildAllBuses(merged, anim));
-    manageLayoverTimers();
-    return;
-  }
-
-  // Leader status banner
-  const ldr = cl.immediateLeader;
-  const schedBlk   = cl.schedLeaderBlk;
-  const schedBus   = cl.schedLeaderBus;
-  const schedState = cl.schedLeaderState; // 'missing' | 'behind' | 'ahead' | null
-
-  if (schedState === 'missing') {
-    const actualPart = ldr ? ' — actual: Bus V#' + esc(String(ldr.VehicleID || ldr.BlockID || '?')) : ' — no actual leader visible';
-    showBanner('warn', '⚠', 'Sched leader Block ' + esc(schedBlk) + ' NOT IN SERVICE' + actualPart);
-  } else if (schedState === 'behind') {
-    const sVid = schedBus ? (schedBus.VehicleID || schedBus.BlockID || '?') : '?';
-    showBanner('warn', '⚠', 'Sched leader Block ' + esc(schedBlk) + ' passed — Bus V#' + esc(String(sVid)) + ' is behind you');
-  } else if (!ldr) {
-    showBanner('warn', '⚠', 'You are first ' + dirShort(cl.direction) + ' — no leading bus');
-  } else if (ldr._isLayover) {
-    showBanner('info', 'ℹ', 'Leading Bus ' + esc(ldr.BlockID) + ' is AT TERMINAL');
-  } else {
-    const ll = parseInt(ldr.late) || 0;
-    const vid = ldr.VehicleID || ldr.BlockID || '?';
-    if (ll <= 0)       showBanner('ok',   '✓', 'Leading Bus V#' + esc(vid) + ' is on time');
-    else if (ll <= 5)  showBanner('info', 'ℹ', 'Leading Bus V#' + esc(vid) + ' is ' + ll + ' min late');
-    else               showBanner('warn', '⚠', 'Leading Bus V#' + esc(vid) + ' is ' + ll + ' min late');
-  }
-
-  setContent(buildFoundMode(cl, anim));
+  annotateSchedLeader(merged);
+  annotateLeaderTimeline(merged);
+  setContent(buildAllBuses(merged, anim));
   manageLayoverTimers();
+  updatePagesTransform();
 }
 
-function buildFoundMode(cl, anim) {
-  const { leaders, you, followers } = cl;
-  let h = '<div class="timeline-wrap"><div class="timeline">';
-  let idx = 0;
-
-  if (leaders.length > 0)
-    h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">↑ Ahead · ' + leaders.length + ' bus' + (leaders.length !== 1 ? 'es' : '') + '</div>';
-
-  leaders.forEach((bus, i) => {
-    const isImm = i === leaders.length - 1;
-    const role  = isImm ? 'my-leader' : 'leading';
-    const label = isImm ? 'LEADING BUS' : 'LEADING BUS +' + (leaders.length - i);
-    const hw = isImm && !bus._isLayover && !you._isLayover
-      ? (bus.next_stop_sequence || 0) - (you.next_stop_sequence || 0) : null;
-    const aL = i > 0 ? leaders[i - 1] : null;
-    const aF = i < leaders.length - 1 ? leaders[i + 1] : you;
-    h += buildNode(bus, role, label, idx++, anim, hw, null, aL, aF);
-  });
-
-  if (leaders.length > 0)
-    h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">● Selected Bus</div>';
-
-  h += buildNode(you, 'you', 'Selected Bus', idx++, anim, null, null, cl.immediateLeader, followers[0] || null, { schedLeaderBlk: cl.schedLeaderBlk, schedLeaderBus: cl.schedLeaderBus, schedLeaderState: cl.schedLeaderState });
-
-  if (followers.length > 0)
-    h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">↓ Behind · ' + followers.length + '</div>';
-
-  followers.forEach((bus, i) => {
-    const label = i === 0 ? 'FOLLOWING BUS' : 'FOLLOWING BUS +' + (i + 1);
-    const hw = i === 0 && !bus._isLayover && !you._isLayover
-      ? (you.next_stop_sequence || 0) - (bus.next_stop_sequence || 0) : null;
-    const aL = i === 0 ? you : followers[i - 1];
-    const aF = i < followers.length - 1 ? followers[i + 1] : null;
-    h += buildNode(bus, 'following', label, idx++, anim, null, hw, aL, aF);
-  });
-
-  return h + '</div></div>';
-}
-
+// Groups all buses into one swipeable "page" per direction. Touch-swipe
+// (or tap a dot) switches pages — see setupSwipe()/goToPage() below.
 function buildAllBuses(merged, anim) {
   const dirs = {};
   merged.forEach(b => { const d = b.Direction || 'Unknown'; (dirs[d] = dirs[d] || []).push(b); });
-  let h = '<div class="timeline-wrap"><div class="timeline">';
+  const dirKeys = Object.keys(dirs).sort();
+
+  let h = '<div class="pages-wrap"><div class="pages-track" id="pagesTrack">';
   let idx = 0;
-  Object.keys(dirs).sort().forEach(dir => {
-    const buses = dirs[dir].sort((a, b) => (b.next_stop_sequence || 0) - (a.next_stop_sequence || 0));
+  dirKeys.forEach(dir => {
+    // Consistent visual geography across a route's two direction pages, so the
+    // same physical point keeps its vertical spot when you swipe. Buses travel
+    // through the list in their direction of motion:
+    //   Eastbound/Southbound → START at TOP, destination at BOTTOM (buses move
+    //                          DOWN as they progress).
+    //   Westbound/Northbound → START at BOTTOM, destination at TOP (buses move
+    //                          UP as they progress).
+    // next_stop_sequence grows toward the destination. Scheduled (not-yet-
+    // started) buses sit at the START end, ordered by scheduled departure so
+    // the soonest-to-leave is nearest the last-started (lowest-sequence) bus.
+    const westNorth = /west|north/i.test(dir);
+    const active = dirs[dir].filter(b => !b._scheduledOnly)
+      .sort((a, b) => (a.next_stop_sequence || 0) - (b.next_stop_sequence || 0)); // start → destination
+    const sched = dirs[dir].filter(b => b._scheduledOnly)
+      .sort((a, b) => (a._dueOutMin != null ? a._dueOutMin : -Infinity) -
+                      (b._dueOutMin != null ? b._dueOutMin : -Infinity));         // soonest → latest
+    // EB/SB: scheduled (latest…soonest) at top, then active start→destination.
+    // WB/NB: active destination→start at top, then scheduled (soonest…latest).
+    const buses = westNorth
+      ? active.slice().reverse().concat(sched)
+      : sched.slice().reverse().concat(active);
+    h += '<div class="page"><div class="timeline-wrap"><div class="timeline">';
     h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">' + dirShort(dir) + ' · ' + buses.length + ' bus' + (buses.length !== 1 ? 'es' : '') + '</div>';
-    buses.forEach((bus, i) => {
-      const aL = i > 0 ? buses[i - 1] : null;
-      const aF = i < buses.length - 1 ? buses[i + 1] : null;
-      h += buildNode(bus, bus._isLayover ? 'layover' : 'other', bus._isLayover ? 'AT TERMINAL' : 'BUS', idx++, anim, null, null, aL, aF);
-    });
+    buses.forEach(bus => { h += buildNode(bus, idx++, anim); });
+    h += '</div></div></div>';
   });
-  return h + '</div></div>';
+  h += '</div></div>';
+
+  if (dirKeys.length > 1) {
+    h += '<div class="page-dots">';
+    dirKeys.forEach((dir, i) => {
+      h += '<span class="page-dot' + (i === 0 ? ' active' : '') + '" data-page="' + i + '">' + dirShort(dir) + '</span>';
+    });
+    h += '</div>';
+  }
+  return h;
 }
 
-function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader, adjFollower, schedInfo) {
+function buildNode(bus, idx, anim) {
   const late = parseInt(bus.late) || 0;
   let lateClass, lateText;
   if (late === 0)         { lateClass = 'ontime'; lateText = 'On Time'; }
@@ -773,79 +1394,182 @@ function buildNode(bus, role, label, idx, anim, leaderHw, followerHw, adjLeader,
   else                    { lateClass = 'bad';    lateText = '+' + late + 'm late'; }
 
   const seat    = seatInfo(bus.estimated_seat_availability);
-  const dir     = dirShort(bus.Direction);
   const blk     = bus.BlockID || bus.label || '—';
-  const vid     = bus.VehicleID || bus.label || '—';
+  const vidRaw  = String(bus.VehicleID || bus.label || '').trim();
+  const vid     = vidRaw && vidRaw !== '0' ? vidRaw : '';
   const stop    = bus.next_stop_name || '';
   const isLay   = !!bus._isLayover;
-  const nodeRole = isLay && role !== 'you' ? 'layover' : role;
-  const runInfo  = getCurrentRunInfo(blk);
+  const isSched = !!bus._scheduledOnly;
+  const nodeRole = isSched ? 'scheduled' : (isLay ? 'layover' : 'other');
+  // Timeline arrow points the way this direction of travel moves through the
+  // list: up for west/north, down for east/south.
+  const arrowDir = /west|north/i.test(bus.Direction || '') ? 'up' : 'down';
 
-  let h = '<div class="bus-node ' + nodeRole + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.02) + 's">';
+  let h = '<div class="bus-node ' + nodeRole + ' ' + arrowDir + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.02) + 's">';
   h += '<div class="node-card">';
 
   h += '<div class="node-row1">';
   h += '<span class="block-num">' + esc(String(blk)) + '</span>';
-  h += '<span class="vehicle-num">' + ICONS.bus + ' ' + esc(String(vid)) + '</span>';
-  h += '</div>';
+  // Bus number comes only from the live feed; a scheduled-only block may not
+  // have one yet (or its only history is from a previous service day). Show it
+  // when known from today, otherwise a muted "pending" placeholder.
+  if (vid) {
+    h += '<span class="vehicle-num">' + ICONS.bus + ' ' + esc(vid) + '</span>';
+  } else if (isSched) {
+    h += '<span class="vehicle-num unknown">' + ICONS.bus + ' Bus# pending</span>';
+  } else {
+    h += '<span class="vehicle-num">' + ICONS.bus + ' —</span>';
+  }
+  // Scheduled-only placeholder: no live data at all, drawn straight from the
+  // GTFS schedule. Show its scheduled status and destination, then stop —
+  // the live-data rows below don't apply.
+  if (isSched) {
+    h += '</div>';
+    // Badge shows the block's next DIRECTION (from GTFS), not "at terminal";
+    // detail shows the scheduled status; the from/to line shows where it
+    // actually is (its pull-out point) and where it's headed — clearer for an
+    // operator than a terminal-specific "→ final stop".
+    const dirAbbr = dirShort(bus.Direction);
+    // "served" = already ran a trip today and is now between trips at the
+    // terminal → yellow label + a live layover timer. A block still waiting
+    // for its FIRST trip stays blue with no timer.
+    const served = bus._schedState === 'layover_expected';
+    let badgeCls = 'sched-only-badge', detailCls = 'sched-only-detail', detail;
+    if (bus._schedState === 'in_service_expected') {
+      badgeCls += ' expected';
+      detail = 'No live data — should be in service';
+    } else if (bus._overdueMin > 0) {
+      detailCls += ' overdue';
+      detail = 'OVERDUE ' + bus._overdueMin + 'm · due out ' + fmtClock(bus._dueOutMin);
+    } else {
+      detail = 'Due out ' + fmtClock(bus._dueOutMin);
+    }
+    if (served) badgeCls += ' served';
+    h += '<div class="sched-only-row"><span class="' + badgeCls + '">SCHEDULED ' + esc(dirAbbr) + '</span>';
+    h += '<span class="' + detailCls + '">' + detail + '</span>';
+    // Layover timer — counts up from terminal arrival; the card flips to a
+    // live one once the next trip starts, so the timer goes with it.
+    if (served && bus._layoverSince) {
+      h += '<span class="term-timer" data-layover-since="' + bus._layoverSince + '">' +
+           fmtDuration(Date.now() - bus._layoverSince) + '</span>';
+    }
+    h += '</div>';
+    if (bus._firstStop || bus._lastStop) {
+      h += '<div class="node-bottom"><span class="stop-name">';
+      if (bus._firstStop) h += 'From ' + esc(bus._firstStop);
+      if (bus._firstStop && bus._lastStop) h += '<br>';
+      if (bus._lastStop) h += 'to ' + esc(bus._lastStop);
+      h += '</span></div>';
+    }
+    h += paddleRowHtml(blk);
+    h += leaderTimelineHtml(bus);
+    return h + '</div></div>';
+  }
 
   if (!isLay) {
-    h += '<div class="node-row2">';
     if (bus._notTracking) {
       h += '<span class="not-tracking-tag">NOT TRACKING</span>';
     } else {
       h += '<span class="late-tag ' + lateClass + '">' + lateText + '</span>';
     }
-    if (seat.show) h += '<span class="seat-tag ' + seat.c + '">' + ICONS.seat + ' ' + seat.t + '</span>';
-    h += '</div>';
   }
+  h += '</div>';
 
-  if (leaderHw !== null && leaderHw > 0) {
-    h += '<div class="headway-row"><span>↕ Gap to you:</span><span class="headway-val">' + leaderHw + ' stop' + (leaderHw !== 1 ? 's' : '') + ' ahead</span></div>';
-  } else if (followerHw !== null && followerHw > 0) {
-    h += '<div class="headway-row"><span>↕ Gap to you:</span><span class="headway-val">' + followerHw + ' stop' + (followerHw !== 1 ? 's' : '') + ' behind</span></div>';
+  if (!isLay && seat.show) {
+    h += '<div class="node-row2">';
+    h += '<span class="seat-tag ' + seat.c + '">' + ICONS.seat + ' ' + seat.t + '</span>';
+    h += '</div>';
   }
 
   if (isLay) {
     const dur = fmtDuration(Date.now() - (bus._layoverSince || Date.now()));
     h += '<div class="layover-row"><span class="terminal-badge">AT TERMINAL</span>';
     h += '<span>Layover:</span>';
-    h += '<span class="layover-timer" data-layover-since="' + (bus._layoverSince || 0) + '">' + dur + '</span></div>';
-  }
-
-  if (schedInfo && schedInfo.schedLeaderBlk && schedInfo.schedLeaderState !== 'ahead') {
-    const sBlk   = schedInfo.schedLeaderBlk;
-    const sState = schedInfo.schedLeaderState; // 'missing' | 'behind'
-    const sVid   = schedInfo.schedLeaderBus
-      ? (schedInfo.schedLeaderBus.VehicleID || schedInfo.schedLeaderBus.BlockID || '—') : null;
-    h += '<div class="sched-leader-row">';
-    h += '<span class="sched-leader-label">SCHED LEADER</span>';
-    h += '<span class="sched-leader-blk">' + esc(sBlk) + '</span>';
-    if (sState === 'missing') {
-      h += '<span class="sched-leader-missing">NOT IN SERVICE</span>';
-    } else {
-      h += '<span class="sched-leader-passed">PASSED</span>';
-      if (sVid) h += '<span class="sched-leader-bus">Bus# ' + esc(String(sVid)) + '</span>';
-    }
-    h += '</div>';
-  }
-
-  if (stop || runInfo) {
-    h += '<div class="node-bottom">';
-    if (stop && !isLay) h += '<span class="stop-name">→ ' + esc(stop) + '</span>';
-    if (runInfo) {
-      const isMob = navigator.maxTouchPoints > 0;
-      const padUrl = (isMob ? runInfo.mob : runInfo.pc) || runInfo.mob || runInfo.pc;
-      if (padUrl) {
-        h += '<a class="run-tag" href="' + esc(padUrl) + '" target="_blank" rel="noopener">Run #: ' + esc(String(runInfo.runno)) + '</a>';
+    h += '<span class="layover-timer" data-layover-since="' + (bus._layoverSince || 0) + '">' + dur + '</span>';
+    if (bus._dueOutMin != null) {
+      if (bus._overdueMin > 0) {
+        h += '<span class="due-out overdue">OVERDUE ' + bus._overdueMin + 'm</span>';
       } else {
-        h += '<span class="run-tag">Run #: ' + esc(String(runInfo.runno)) + '</span>';
+        h += '<span class="due-out">Due out ' + fmtClock(bus._dueOutMin) + '</span>';
       }
+    } else if (bus._doneForDay) {
+      h += '<span class="due-out">DONE FOR DAY</span>';
     }
     h += '</div>';
   }
 
+  // My follower has overtaken me (red) — shown on the leader's card.
+  if (bus._overtake) {
+    h += '<div class="flag-row"><span class="flag-badge flag-follower">FOLLOWER ' +
+         esc(bus._overtake.followerBlk) + ' &nbsp;Bus#: ' + esc(bus._overtake.followerBus) +
+         ' &nbsp;~' + bus._overtake.overtakeMin + 'm AHEAD</span></div>';
+  }
+  // I have overtaken my leader (yellow) — shown on the follower's card.
+  if (bus._passedLeader) {
+    h += '<div class="flag-row"><span class="flag-badge flag-leader">LEADER ' +
+         esc(bus._passedLeader.leaderBlk) + ' &nbsp;Bus#: ' + esc(bus._passedLeader.leaderBus) +
+         ' &nbsp;~' + bus._passedLeader.overtakeMin + 'm BEHIND</span></div>';
+  }
+
+  // Only surface the SCHED LEADER row when something is actually notable — a
+  // bus quietly following its scheduled leader in order needs no row. Notable
+  // = it passed its leader (out of order), the leader has no live data / isn't
+  // in service, or both this bus and its leader are sitting at the terminal.
+  if (bus._schedLeaderBlk) {
+    const sBlk   = bus._schedLeaderBlk;
+    const sState = bus._schedLeaderState; // 'ahead' | 'not_due_yet' | 'done_for_day' | 'missing' | 'no_data' | 'behind'
+    const leaderLay    = !!(bus._schedLeaderBus && bus._schedLeaderBus._isLayover);
+    const bothTerminal = isLay && leaderLay;
+    // 'behind' (you passed your leader) is now shown as the yellow LEADER
+    // …BEHIND flag above (with minutes), so it's not a "notable" row here.
+    const notable = sState === 'no_data' || sState === 'missing' || bothTerminal;
+    if (notable) {
+      // Real live vehicle number only — no block-number fallback (that showed a
+      // misleading "Bus# <blocknum>" for leaders with no live data).
+      const lvRaw = bus._schedLeaderBus ? String(bus._schedLeaderBus.VehicleID || '').trim() : '';
+      const sVid  = lvRaw && lvRaw !== '0' ? lvRaw : null;
+      h += '<div class="sched-leader-row">';
+      h += '<span class="sched-leader-label">SCHED LEADER</span>';
+      h += '<span class="sched-leader-blk">' + esc(sBlk) + '</span>';
+      h += '<span class="sched-leader-bus">Bus# ' + (sVid ? esc(sVid) : '—') + '</span>';
+      if (sState === 'no_data') {
+        h += '<span class="sched-leader-missing">NO LIVE DATA · maybe not in service</span>';
+      } else if (sState === 'missing') {
+        h += '<span class="sched-leader-missing">NOT IN SERVICE</span>';
+      } else if (bothTerminal) {
+        h += '<span class="sched-leader-notdue">BOTH AT TERMINAL</span>';
+      }
+      h += '</div>';
+    }
+  }
+
+  if (stop && !isLay) {
+    h += '<div class="node-bottom"><span class="stop-name">→ ' + esc(stop) + '</span></div>';
+  }
+
+  h += paddleRowHtml(blk);
+  h += leaderTimelineHtml(bus);
   return h + '</div></div>';
+}
+
+// Renders the past/current/next leader timeline for a card. Collapsed behind
+// a tappable "Leaders ▾" toggle so it doesn't bloat every card by default.
+function leaderTimelineHtml(bus) {
+  const tl = bus._leaderTimeline;
+  if (!tl || (!tl.past.length && !tl.current && !tl.next.length)) return '';
+  const row = r =>
+    '<div class="tl-row">' +
+      '<span class="tl-dir">' + esc(r.dir) + '</span>' +
+      '<span class="tl-time">' + fmtClock(r.start) + '</span>' +
+      '<span class="tl-blk">Blk ' + esc(r.blk) + '</span>' +
+      '<span class="tl-bus">Bus ' + esc(r.bus) + '</span>' +
+      '<span class="tl-status">' + esc(r.status) + '</span>' +
+    '</div>';
+  let inner = '';
+  if (tl.past.length)  inner += '<div class="tl-head">Past leaders</div>'    + tl.past.map(row).join('');
+  if (tl.current)      inner += '<div class="tl-head">Current leader</div>'  + row(tl.current);
+  if (tl.next.length)  inner += '<div class="tl-head">Next leaders</div>'    + tl.next.map(row).join('');
+  return '<details class="leader-tl"><summary>Leaders</summary>' + inner + '</details>';
 }
 
 // ── ALERTS / DETOURS ─────────────────────────────────────────
@@ -907,6 +1631,60 @@ function manageLayoverTimers() {
   }
 }
 
+// ── SWIPEABLE DIRECTION PAGES ────────────────────────────────
+// `#pagesTrack` is rebuilt from scratch on every render (setContent()
+// replaces innerHTML), so the current page position is tracked here and
+// reapplied after each render rather than living on the DOM.
+let activePage = 0;
+
+function updatePagesTransform() {
+  const track = document.getElementById('pagesTrack');
+  if (!track) return;
+  const count = track.querySelectorAll('.page').length;
+  if (activePage >= count) activePage = 0;
+  track.style.transform = 'translateX(-' + (activePage * 100) + '%)';
+  document.querySelectorAll('.page-dot').forEach((d, i) => d.classList.toggle('active', i === activePage));
+}
+
+function goToPage(i) {
+  const track = document.getElementById('pagesTrack');
+  if (!track) return;
+  const count = track.querySelectorAll('.page').length;
+  activePage = Math.max(0, Math.min(count - 1, i));
+  updatePagesTransform();
+}
+
+// Event delegation on the stable #content wrapper (not the regenerated
+// inner elements) so swipe/tap handling survives every re-render.
+(function setupSwipe() {
+  const content = document.getElementById('content');
+  let startX = null, startY = null, dragging = false;
+
+  content.addEventListener('touchstart', e => {
+    if (!e.target.closest('.pages-wrap')) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    dragging = true;
+  }, { passive: true });
+
+  content.addEventListener('touchend', e => {
+    if (!dragging) return;
+    dragging = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    // Require a mostly-horizontal swipe so vertical scrolling isn't hijacked.
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      goToPage(activePage + (dx < 0 ? 1 : -1));
+    }
+  }, { passive: true });
+
+  // Tap-to-switch fallback for non-touch input (and easier automated testing).
+  content.addEventListener('click', e => {
+    const dot = e.target.closest('.page-dot');
+    if (dot) goToPage(parseInt(dot.dataset.page, 10));
+  });
+})();
+
 // ── TICK ─────────────────────────────────────────────────────
 let ticking = false;
 
@@ -917,7 +1695,7 @@ async function tick() {
   try {
     const live = await fetchTV(state.route);
     updateCache(live, state.route);
-    renderMain(mergeLiveAndCache(live, state.route), state.block, state.route);
+    renderMain(annotateOvertake(annotateLayovers(mergeScheduledBlocks(mergeServerRecovery(mergeLiveAndCache(live, state.route)), live))), state.route);
     state.lastUpdate = new Date();
     refreshSec = 30;
     setStatus('live');
@@ -938,8 +1716,10 @@ async function onRouteChange() {
   if (!state.route) return;
 
   busCache.clear();
+  loadScheduleData(state.route);
   isFirstRender = true;
   lastHTML = '';
+  activePage = 0; // a new route may have a different direction ordering/count
   try { localStorage.setItem('bt_route', state.route); } catch(e) {}
 
   document.getElementById('alertsPanel').classList.add('hidden');
@@ -961,7 +1741,7 @@ async function onRouteChange() {
 
     const live = tvRes.value;
     updateCache(live, state.route);
-    renderMain(mergeLiveAndCache(live, state.route), state.block, state.route);
+    renderMain(annotateOvertake(annotateLayovers(mergeScheduledBlocks(mergeServerRecovery(mergeLiveAndCache(live, state.route)), live))), state.route);
     state.lastUpdate = new Date();
     refreshSec = 30;
     setStatus('live');
@@ -1000,6 +1780,14 @@ function fmtDuration(ms) {
   return s + 's';
 }
 
+function fmtClock(min) {
+  min = ((min % 1440) + 1440) % 1440;
+  let h = Math.floor(min / 60), m = min % 60;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+}
+
 function dirShort(d) {
   if (!d) return '—';
   const l = d.toLowerCase();
@@ -1033,7 +1821,6 @@ const ICONS = {
 // ── INIT ─────────────────────────────────────────────────────
 (function init() {
   const routeSel = document.getElementById('routeSelect');
-  const blockInp = document.getElementById('blockInput');
 
   ROUTES.forEach(r => {
     const o = document.createElement('option');
@@ -1043,32 +1830,22 @@ const ICONS = {
 
   try {
     const sr = localStorage.getItem('bt_route');
-    const sb = localStorage.getItem('bt_block');
     if (sr) routeSel.value = sr;
-    if (sb) blockInp.value = sb;
   } catch(e) {}
 
   state.route = routeSel.value;
-  state.block = blockInp.value.trim();
 
   routeSel.addEventListener('change', onRouteChange);
-
-  let saveTimer = null;
-  blockInp.addEventListener('input', e => {
-    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5);
-    state.block = e.target.value;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => { try { localStorage.setItem('bt_block', state.block); } catch(e2) {} }, 500);
-    if (state.block.length >= 3 && state.route && !ticking) tick();
-  });
-
-  blockInp.addEventListener('keydown', e => { if (e.key === 'Enter' && state.route) tick(); });
 
   window.addEventListener('online',  () => { if (state.route) onRouteChange(); });
   window.addEventListener('offline', () => setStatus('offline'));
 
-  loadScheduleData();
-  if (state.route) onRouteChange();
+  // Load holiday overrides first so getDayType() is correct before any
+  // schedule/paddle fetch reads it.
+  loadCalendarOverrides().then(() => {
+    loadPaddleData();
+    if (state.route) onRouteChange();
+  });
 })();
 </script>
 </body>
