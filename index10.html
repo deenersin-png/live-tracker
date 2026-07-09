@@ -107,13 +107,31 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .node-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
 .bus-node.layover .node-card{border-style:dashed;border-color:var(--yellow);background:linear-gradient(135deg,rgba(210,153,34,.06),var(--card))}
 .bus-node.scheduled .node-card{border-style:dashed;border-color:var(--border-light);background:linear-gradient(135deg,rgba(139,148,158,.05),var(--card))}
+/* Overtake flags (persist through renumbering & direction changes): passer = yellow, passed = red */
+.bus-node.flag-yellow .node-card{border-color:var(--yellow);box-shadow:0 0 12px rgba(210,153,34,.22);background:linear-gradient(135deg,rgba(210,153,34,.10),var(--card))}
+.bus-node.flag-red .node-card{border-color:var(--red);box-shadow:0 0 12px rgba(248,81,73,.22);background:linear-gradient(135deg,rgba(248,81,73,.10),var(--card))}
+.bus-node.flag-yellow::before{color:var(--yellow)}
+.bus-node.flag-red::before{color:var(--red)}
 
 /* CARD CONTENT */
 .node-row1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pos-num{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 6px;border-radius:12px;background:var(--border);color:var(--text);font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+.bus-node.flag-yellow .pos-num{background:var(--yellow-dim);color:var(--yellow)}
+.bus-node.flag-red .pos-num{background:var(--red-dim);color:var(--red)}
+/* FIXED sequence number, far right of the main line — larger & bold. Number
+   never changes; only its colour does when a bus is out of order. */
+.seq-num{margin-left:auto;padding-left:10px;font-size:22px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;text-align:right;line-height:1}
+.seq-num.flag-yellow{color:var(--yellow)}
+.seq-num.flag-red{color:var(--red)}
 .block-num{font-size:16px;font-weight:800;color:var(--text);letter-spacing:.05em}
 .bus-node.layover .block-num{color:var(--yellow)}
 .bus-node.scheduled .block-num{color:var(--text-dim)}
 .vehicle-num.unknown{color:var(--text-faint);background:transparent;border:1px dashed var(--border-light)}
+
+/* PASS STATUS LINE (leader/follower relationship after an overtake) */
+.pass-info{font-size:12px;font-weight:700;margin-top:7px;letter-spacing:.02em;text-transform:uppercase}
+.pass-info.yellow{color:var(--yellow)}
+.pass-info.red{color:var(--red)}
 
 /* SCHEDULED-ONLY ROW (no live data, from GTFS schedule) */
 .sched-only-row{display:flex;align-items:center;gap:8px;margin-top:7px;flex-wrap:wrap}
@@ -128,7 +146,6 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 
 .node-row2{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap}
 .late-tag{font-size:14px;font-weight:700;padding:3px 9px;border-radius:5px}
-.node-row1 .late-tag,.node-row1 .not-tracking-tag{margin-left:auto}
 .late-tag.ontime{background:var(--green-dim);color:var(--green)}
 .late-tag.early{background:var(--yellow-dim);color:var(--yellow)}
 .late-tag.mild{background:var(--yellow-dim);color:var(--yellow)}
@@ -173,7 +190,8 @@ a.run-chip:active{opacity:.7}
 
 /* LEADER TIMELINE (past / current / next leaders, collapsible) */
 .leader-tl{margin-top:7px;padding-top:7px;border-top:1px solid var(--border);font-size:12px}
-.leader-tl summary{cursor:pointer;font-weight:700;color:var(--accent);list-style:none;padding:2px 0;touch-action:manipulation}
+.leader-tl summary{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:var(--accent);list-style:none;padding:2px 0;touch-action:manipulation}
+.leader-tl summary .seat-tag{margin-left:auto}
 .leader-tl summary::-webkit-details-marker{display:none}
 .leader-tl summary::before{content:'▸ ';color:var(--text-faint)}
 .leader-tl[open] summary::before{content:'▾ '}
@@ -184,6 +202,13 @@ a.run-chip:active{opacity:.7}
 .tl-blk{font-weight:700;color:var(--text)}
 .tl-bus{color:var(--text-dim)}
 .tl-status{margin-left:auto;font-weight:600;color:var(--text-dim)}
+
+/* COLLAPSED "N more scheduled" section (not-yet-pulled-out blue blocks) */
+.more-sched{margin:2px 0 6px}
+.more-sched>summary{display:inline-block;margin-left:50px;cursor:pointer;font-size:12px;font-weight:700;color:var(--accent);list-style:none;padding:7px 12px;background:var(--card);border:1px dashed var(--border-light);border-radius:10px;touch-action:manipulation}
+.more-sched>summary::-webkit-details-marker{display:none}
+.more-sched>summary::before{content:'▸ ';color:var(--text-faint)}
+.more-sched[open]>summary::before{content:'▾ '}
 
 /* BOTTOM ROW (location) */
 .node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
@@ -1139,6 +1164,114 @@ function liveTripLast(bus) {
   return t ? (t.last || null) : null;
 }
 
+// ── DYNAMIC POSITION TRACKER ─────────────────────────────────
+// Numbers each in-service bus by its current sequence within its direction
+// (position 1 = leader / furthest along). When two buses swap order mid-route
+// (an overtake), the passer is flagged yellow and the passed one red. Those
+// flags PERSIST on each bus — through renumbering AND through a change of
+// direction (a passer that reaches the terminal, flips to the opposite
+// direction and keeps running stays yellow; its passed leader stays red).
+// Each flagged bus also carries a one-line status of where its pass-partner
+// is right now (direction + live position).
+const posPrevSeq = new Map();   // direction -> Map(blockId -> last next_stop_sequence)
+const posFlag    = new Map();   // blockId -> { flag:'yellow'|'red', role, partner }
+const posFixed   = new Map();   // direction -> Map(blockId -> FIXED position number, never changes)
+
+function resetPositionState() { posPrevSeq.clear(); posFlag.clear(); posFixed.clear(); }
+
+function annotatePositions(merged) {
+  const byBlock = new Map();
+  for (const b of merged) {
+    b._posNum = null; b._posFlag = null; b._passInfo = null;
+    byBlock.set(String(b.BlockID || ''), b);
+  }
+
+  // group only in-service (live) buses by direction
+  const byDir = {};
+  for (const b of merged) {
+    if (b._scheduledOnly || b._isLayover) continue;
+    (byDir[b.Direction] = byDir[b.Direction] || []).push(b);
+  }
+
+  const nextPrev = new Map();
+  for (const dir of Object.keys(byDir)) {
+    // order by progress: most-advanced (highest sequence) = position 1
+    const buses = byDir[dir].slice().sort((a, b) =>
+      (b.next_stop_sequence || 0) - (a.next_stop_sequence || 0));
+    // Assign each block a FIXED position number the first time it's seen in
+    // this direction (leader-first on that first frame) and never renumber it
+    // again. When buses later go out of order it's the COLOUR (posFlag) that
+    // changes, not the number — so #2 can sit physically ahead of #1.
+    let dirFixed = posFixed.get(dir);
+    if (!dirFixed) { dirFixed = new Map(); posFixed.set(dir, dirFixed); }
+    let maxNum = 0; for (const n of dirFixed.values()) if (n > maxNum) maxNum = n;
+    buses.forEach(b => {
+      const blk = String(b.BlockID || '');
+      if (!dirFixed.has(blk)) dirFixed.set(blk, ++maxNum);
+    });
+    buses.forEach(b => { b._posNum = dirFixed.get(String(b.BlockID || '')); });
+
+    // detect overtakes vs the previous frame: X currently ahead of Y but was
+    // behind Y last time → X passed Y. Flag X (passer) yellow, Y (passed) red,
+    // and remember each other as the pass-partner.
+    const prev = posPrevSeq.get(dir) || new Map();
+    for (let i = 0; i < buses.length; i++) {
+      for (let j = i + 1; j < buses.length; j++) {
+        const X = buses[i], Y = buses[j];               // X ahead (lower pos) of Y now
+        const bx = String(X.BlockID || ''), by = String(Y.BlockID || '');
+        const px = prev.get(bx), py = prev.get(by);
+        if (px == null || py == null) continue;          // one wasn't here last frame
+        const xSeq = X.next_stop_sequence || 0, ySeq = Y.next_stop_sequence || 0;
+        if (xSeq > ySeq && py > px) {                    // was behind, now ahead → passed Y
+          posFlag.set(bx, { flag: 'yellow', role: 'passer', partner: by });
+          posFlag.set(by, { flag: 'red',    role: 'passed', partner: bx });
+        }
+      }
+    }
+
+    const cur = new Map();
+    buses.forEach(b => cur.set(String(b.BlockID || ''), b.next_stop_sequence || 0));
+    nextPrev.set(dir, cur);
+  }
+  posPrevSeq.clear();
+  for (const [k, v] of nextPrev) posPrevSeq.set(k, v);
+
+  // Apply persistent flags to every card the bus appears on (live OR at
+  // terminal), regardless of direction — the flag follows the bus. Attach a
+  // status line pointing at where the pass-partner is right now.
+  for (const b of merged) {
+    const f = posFlag.get(String(b.BlockID || ''));
+    if (!f) continue;
+    b._posFlag = f.flag;
+    const partner = byBlock.get(f.partner);
+    b._passInfo = {
+      role: f.role,                                            // 'passer' | 'passed'
+      partnerBlk: f.partner,
+      partnerDir: partner ? dirShort(partner.Direction) : null,
+      partnerPos: partner ? partner._posNum : null,            // null if partner at terminal
+      partnerTerminal: partner ? !!(partner._scheduledOnly || partner._isLayover) : false,
+      partnerGone: !partner,                                   // finished / not on the board
+    };
+  }
+  return merged;
+}
+
+// One-line leader/follower status shown above the location tag on a flagged
+// card. Passer → "Leader behind"; passed → "Follower ahead"; both append the
+// partner's current direction + live position (or terminal / off-service).
+function passInfoHtml(bus) {
+  const pi = bus._passInfo;
+  if (!pi) return '';
+  const who = pi.role === 'passer' ? 'Leader behind' : 'Follower ahead';
+  let where;
+  if (pi.partnerGone)            where = 'partner off service';
+  else if (pi.partnerPos != null) where = 'serving ' + esc(pi.partnerDir) + ' · #' + pi.partnerPos;
+  else if (pi.partnerTerminal)   where = 'at ' + esc(pi.partnerDir || '') + ' terminal';
+  else                           where = 'serving ' + esc(pi.partnerDir || '');
+  return '<div class="pass-info ' + (pi.role === 'passer' ? 'yellow' : 'red') + '">' +
+         who + ' · ' + where + '</div>';
+}
+
 function annotateSchedLeader(merged) {
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   const byBlock = new Map();
@@ -1332,6 +1465,7 @@ function renderMain(merged, route) {
 
   annotateSchedLeader(merged);
   annotateLeaderTimeline(merged);
+  annotatePositions(merged);
   setContent(buildAllBuses(merged, anim));
   manageLayoverTimers();
   updatePagesTransform();
@@ -1360,17 +1494,44 @@ function buildAllBuses(merged, anim) {
     const westNorth = /west|north/i.test(dir);
     const active = dirs[dir].filter(b => !b._scheduledOnly)
       .sort((a, b) => (a.next_stop_sequence || 0) - (b.next_stop_sequence || 0)); // start → destination
-    const sched = dirs[dir].filter(b => b._scheduledOnly)
-      .sort((a, b) => (a._dueOutMin != null ? a._dueOutMin : -Infinity) -
-                      (b._dueOutMin != null ? b._dueOutMin : -Infinity));         // soonest → latest
-    // EB/SB: scheduled (latest…soonest) at top, then active start→destination.
-    // WB/NB: active destination→start at top, then scheduled (soonest…latest).
-    const buses = westNorth
-      ? active.slice().reverse().concat(sched)
-      : sched.slice().reverse().concat(active);
+    const dueSort = (a, b) => (a._dueOutMin != null ? a._dueOutMin : -Infinity) -
+                              (b._dueOutMin != null ? b._dueOutMin : -Infinity);  // soonest → latest
+    const schedAll = dirs[dir].filter(b => b._scheduledOnly).sort(dueSort);
+
+    // Scheduled buses still waiting for their FIRST trip (blue tag, no bus
+    // number) are collapsed: show only the NEXT (soonest) one inline, tuck the
+    // rest behind a tappable "N more scheduled" section. Already-served /
+    // expected scheduled buses stay visible normally.
+    const notStarted = schedAll.filter(b => b._schedState === 'not_started');
+    const otherSched = schedAll.filter(b => b._schedState !== 'not_started');
+    const schedVisible = otherSched.concat(notStarted.slice(0, 1)).sort(dueSort);
+    const schedHidden  = notStarted.slice(1);
+
+    const totalCount = active.length + schedAll.length;
     h += '<div class="page"><div class="timeline-wrap"><div class="timeline">';
-    h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">' + dirShort(dir) + ' · ' + buses.length + ' bus' + (buses.length !== 1 ? 'es' : '') + '</div>';
-    buses.forEach(bus => { h += buildNode(bus, idx++, anim); });
+    h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">' + dirShort(dir) + ' · ' + totalCount + ' bus' + (totalCount !== 1 ? 'es' : '') + '</div>';
+
+    // Collapsed extras sit at the far START end (furthest from active buses),
+    // matching the scheduled-bus geography.
+    const hiddenHtml = schedHidden.length
+      ? '<details class="more-sched"><summary>' + schedHidden.length +
+        ' more scheduled</summary>' + schedHidden.map(b => buildNode(b, idx++, anim)).join('') +
+        '</details>'
+      : '';
+
+    if (westNorth) {
+      // WB/NB: active (destination→start) on top, then scheduled soonest→latest,
+      // then the collapsed extras at the bottom (start end).
+      active.slice().reverse().forEach(bus => { h += buildNode(bus, idx++, anim); });
+      schedVisible.forEach(bus => { h += buildNode(bus, idx++, anim); });
+      h += hiddenHtml;
+    } else {
+      // EB/SB: collapsed extras on top (start end), then scheduled latest→soonest,
+      // then active start→destination.
+      h += hiddenHtml;
+      schedVisible.slice().reverse().forEach(bus => { h += buildNode(bus, idx++, anim); });
+      active.forEach(bus => { h += buildNode(bus, idx++, anim); });
+    }
     h += '</div></div></div>';
   });
   h += '</div></div>';
@@ -1404,8 +1565,10 @@ function buildNode(bus, idx, anim) {
   // Timeline arrow points the way this direction of travel moves through the
   // list: up for west/north, down for east/south.
   const arrowDir = /west|north/i.test(bus.Direction || '') ? 'up' : 'down';
+  // Overtake flag colour persists on the bus across renumbering & direction changes.
+  const flagCls = bus._posFlag ? ' flag-' + bus._posFlag : '';
 
-  let h = '<div class="bus-node ' + nodeRole + ' ' + arrowDir + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.02) + 's">';
+  let h = '<div class="bus-node ' + nodeRole + ' ' + arrowDir + flagCls + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.02) + 's">';
   h += '<div class="node-card">';
 
   h += '<div class="node-row1">';
@@ -1420,11 +1583,22 @@ function buildNode(bus, idx, anim) {
   } else {
     h += '<span class="vehicle-num">' + ICONS.bus + ' —</span>';
   }
+  // Live status (on time / late / early ±min) now sits on the main line for
+  // in-service buses; layover & scheduled cards carry their own status rows.
+  if (!isLay && !isSched) {
+    if (bus._notTracking) h += '<span class="not-tracking-tag">NOT TRACKING</span>';
+    else h += '<span class="late-tag ' + lateClass + '">' + lateText + '</span>';
+  }
+  // Fixed sequence number, far right, colour-coded by overtake state.
+  if (bus._posNum != null) {
+    h += '<span class="seq-num' + (bus._posFlag ? ' flag-' + bus._posFlag : '') + '">' + bus._posNum + '</span>';
+  }
+  h += '</div>';
+
   // Scheduled-only placeholder: no live data at all, drawn straight from the
   // GTFS schedule. Show its scheduled status and destination, then stop —
   // the live-data rows below don't apply.
   if (isSched) {
-    h += '</div>';
     // Badge shows the block's next DIRECTION (from GTFS), not "at terminal";
     // detail shows the scheduled status; the from/to line shows where it
     // actually is (its pull-out point) and where it's headed — clearer for an
@@ -1454,6 +1628,7 @@ function buildNode(bus, idx, anim) {
            fmtDuration(Date.now() - bus._layoverSince) + '</span>';
     }
     h += '</div>';
+    h += passInfoHtml(bus);
     if (bus._firstStop || bus._lastStop) {
       h += '<div class="node-bottom"><span class="stop-name">';
       if (bus._firstStop) h += 'From ' + esc(bus._firstStop);
@@ -1466,20 +1641,8 @@ function buildNode(bus, idx, anim) {
     return h + '</div></div>';
   }
 
-  if (!isLay) {
-    if (bus._notTracking) {
-      h += '<span class="not-tracking-tag">NOT TRACKING</span>';
-    } else {
-      h += '<span class="late-tag ' + lateClass + '">' + lateText + '</span>';
-    }
-  }
-  h += '</div>';
-
-  if (!isLay && seat.show) {
-    h += '<div class="node-row2">';
-    h += '<span class="seat-tag ' + seat.c + '">' + ICONS.seat + ' ' + seat.t + '</span>';
-    h += '</div>';
-  }
+  // Status & crowding no longer live here: status is on the main line above,
+  // crowding moved down into the expandable "Leaders" line (see below).
 
   if (isLay) {
     const dur = fmtDuration(Date.now() - (bus._layoverSince || Date.now()));
@@ -1529,19 +1692,21 @@ function buildNode(bus, idx, anim) {
       const lvRaw = bus._schedLeaderBus ? String(bus._schedLeaderBus.VehicleID || '').trim() : '';
       const sVid  = lvRaw && lvRaw !== '0' ? lvRaw : null;
       h += '<div class="sched-leader-row">';
-      h += '<span class="sched-leader-label">SCHED LEADER</span>';
+      h += '<span class="sched-leader-label">Scheduled leader</span>';
       h += '<span class="sched-leader-blk">' + esc(sBlk) + '</span>';
-      h += '<span class="sched-leader-bus">Bus# ' + (sVid ? esc(sVid) : '—') + '</span>';
-      if (sState === 'no_data') {
-        h += '<span class="sched-leader-missing">NO LIVE DATA · maybe not in service</span>';
-      } else if (sState === 'missing') {
-        h += '<span class="sched-leader-missing">NOT IN SERVICE</span>';
+      if (sState === 'no_data' || sState === 'missing') {
+        // Special case — no bus in service for the leader. Compact one-liner:
+        // "Scheduled leader · <block> · Bus# n/a".
+        h += '<span class="sched-leader-bus">Bus# n/a</span>';
       } else if (bothTerminal) {
+        h += '<span class="sched-leader-bus">Bus# ' + (sVid ? esc(sVid) : '—') + '</span>';
         h += '<span class="sched-leader-notdue">BOTH AT TERMINAL</span>';
       }
       h += '</div>';
     }
   }
+
+  h += passInfoHtml(bus);
 
   if (stop && !isLay) {
     h += '<div class="node-bottom"><span class="stop-name">→ ' + esc(stop) + '</span></div>';
@@ -1556,7 +1721,17 @@ function buildNode(bus, idx, anim) {
 // a tappable "Leaders ▾" toggle so it doesn't bloat every card by default.
 function leaderTimelineHtml(bus) {
   const tl = bus._leaderTimeline;
-  if (!tl || (!tl.past.length && !tl.current && !tl.next.length)) return '';
+  const isLive = !bus._scheduledOnly && !bus._isLayover;
+  const hasTL  = !!(tl && (tl.past.length || tl.current || tl.next.length));
+  // Nothing to show, and not a live card that needs a home for its crowding
+  // badge → render nothing at all.
+  if (!hasTL && !isLive) return '';
+
+  // Passenger seat crowding now lives here, right-aligned on the Leaders line.
+  const seat = seatInfo(bus.estimated_seat_availability);
+  const seatHtml = (isLive && seat.show)
+    ? '<span class="seat-tag ' + seat.c + '">' + ICONS.seat + ' ' + seat.t + '</span>' : '';
+
   const row = r =>
     '<div class="tl-row">' +
       '<span class="tl-dir">' + esc(r.dir) + '</span>' +
@@ -1566,10 +1741,14 @@ function leaderTimelineHtml(bus) {
       '<span class="tl-status">' + esc(r.status) + '</span>' +
     '</div>';
   let inner = '';
-  if (tl.past.length)  inner += '<div class="tl-head">Past leaders</div>'    + tl.past.map(row).join('');
-  if (tl.current)      inner += '<div class="tl-head">Current leader</div>'  + row(tl.current);
-  if (tl.next.length)  inner += '<div class="tl-head">Next leaders</div>'    + tl.next.map(row).join('');
-  return '<details class="leader-tl"><summary>Leaders</summary>' + inner + '</details>';
+  if (hasTL) {
+    if (tl.past.length)  inner += '<div class="tl-head">Past leaders</div>'    + tl.past.map(row).join('');
+    if (tl.current)      inner += '<div class="tl-head">Current leader</div>'  + row(tl.current);
+    if (tl.next.length)  inner += '<div class="tl-head">Next leaders</div>'    + tl.next.map(row).join('');
+  } else {
+    inner = '<div class="tl-head">No leader info</div>';
+  }
+  return '<details class="leader-tl"><summary>Leaders' + seatHtml + '</summary>' + inner + '</details>';
 }
 
 // ── ALERTS / DETOURS ─────────────────────────────────────────
@@ -1716,6 +1895,7 @@ async function onRouteChange() {
   if (!state.route) return;
 
   busCache.clear();
+  resetPositionState(); // different route → fresh position numbers & pass flags
   loadScheduleData(state.route);
   isFirstRender = true;
   lastHTML = '';
