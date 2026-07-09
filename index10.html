@@ -190,11 +190,15 @@ a.run-chip:active{opacity:.7}
 
 /* LEADER TIMELINE (past / current / next leaders, collapsible) */
 .leader-tl{margin-top:7px;padding-top:7px;border-top:1px solid var(--border);font-size:12px}
-.leader-tl summary{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:var(--accent);list-style:none;padding:2px 0;touch-action:manipulation}
-.leader-tl summary .seat-tag{margin-left:auto}
-.leader-tl summary::-webkit-details-marker{display:none}
-.leader-tl summary::before{content:'▸ ';color:var(--text-faint)}
-.leader-tl[open] summary::before{content:'▾ '}
+/* Run chips + crowding sit left; only the "Leaders" control on the right end
+   expands the card (chips just open their PDFs). JS-driven toggle so a tap on
+   a chip never opens/closes the panel. */
+.leader-sum{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:3px 0}
+.lead-toggle{margin-left:auto;display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-weight:800;color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:.03em;touch-action:manipulation;user-select:none}
+.lead-toggle .arrow{font-size:22px;line-height:1;display:inline-block;transition:transform .2s}
+.leader-tl.open .lead-toggle .arrow{transform:rotate(90deg)}
+.leader-body{margin-top:2px}
+.leader-body.hidden{display:none}
 .tl-head{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);margin-top:7px;margin-bottom:2px}
 .tl-row{display:flex;align-items:center;gap:7px;padding:2px 0;flex-wrap:wrap}
 .tl-dir{font-weight:700;color:var(--text-dim);min-width:24px}
@@ -662,22 +666,30 @@ async function loadPaddleData() {
 
 // HTML for the run / pull-out-in line under a card. Empty if this block has
 // no pick data.
+// Pull-out / pull-in times only. The run-number chips moved down onto the
+// Leaders line (see runChipsHtml / leaderTimelineHtml).
 function paddleRowHtml(blk) {
   const rec = paddle.byBlock.get(String(blk));
-  if (!rec) return '';
-  let h = '<div class="paddle-row">';
-  if (rec.poTime || rec.piTime) {
-    h += '<span class="po-pi">';
-    if (rec.poTime) h += 'PO ' + esc(rec.poTime);
-    if (rec.poTime && rec.piTime) h += ' · ';
-    if (rec.piTime) h += 'PI ' + esc(rec.piTime);
-    h += '</span>';
-  }
+  if (!rec || (!rec.poTime && !rec.piTime)) return '';
+  let h = '<div class="paddle-row"><span class="po-pi">';
+  if (rec.poTime) h += 'PO ' + esc(rec.poTime);
+  if (rec.poTime && rec.piTime) h += ' · ';
+  if (rec.piTime) h += 'PI ' + esc(rec.piTime);
+  return h + '</span></div>';
+}
+
+// Run-number chips (each opens its paddle PDF in a new tab). Rendered on the
+// left of the Leaders line. Only the right-side "Leaders" control toggles the
+// panel (JS handler), so a chip tap just opens its PDF.
+function runChipsHtml(blk) {
+  const rec = paddle.byBlock.get(String(blk));
+  if (!rec || !rec.runs.length) return '';
+  let h = '';
   for (const r of rec.runs) {
     if (r.link) h += '<a class="run-chip" href="' + esc(r.link) + '" target="_blank" rel="noopener">RUN ' + esc(r.runno) + '</a>';
     else        h += '<span class="run-chip nolink">RUN ' + esc(r.runno) + '</span>';
   }
-  return h + '</div>';
+  return h;
 }
 
 // ── BUS CACHE ────────────────────────────────────────────────
@@ -1176,6 +1188,7 @@ function liveTripLast(bus) {
 const posPrevSeq = new Map();   // direction -> Map(blockId -> last next_stop_sequence)
 const posFlag    = new Map();   // blockId -> { flag:'yellow'|'red', role, partner }
 const posFixed   = new Map();   // direction -> Map(blockId -> FIXED position number, never changes)
+const openLeaders = new Set();  // block ids whose Leaders panel is expanded (persists across re-renders)
 
 function resetPositionState() { posPrevSeq.clear(); posFlag.clear(); posFixed.clear(); }
 
@@ -1614,12 +1627,13 @@ function buildNode(bus, idx, anim) {
       detail = 'No live data — should be in service';
     } else if (bus._overdueMin > 0) {
       detailCls += ' overdue';
-      detail = 'OVERDUE ' + bus._overdueMin + 'm · due out ' + fmtClock(bus._dueOutMin);
+      detail = 'OVERDUE ' + bus._overdueMin + 'm · ' + fmtClock(bus._dueOutMin);
     } else {
-      detail = 'Due out ' + fmtClock(bus._dueOutMin);
+      // Just the time — "SCHD WB:" badge already says it's a scheduled pull-out.
+      detail = fmtClock(bus._dueOutMin);
     }
     if (served) badgeCls += ' served';
-    h += '<div class="sched-only-row"><span class="' + badgeCls + '">SCHEDULED ' + esc(dirAbbr) + '</span>';
+    h += '<div class="sched-only-row"><span class="' + badgeCls + '">SCHD ' + esc(dirAbbr) + ':</span>';
     h += '<span class="' + detailCls + '">' + detail + '</span>';
     // Layover timer — counts up from terminal arrival; the card flips to a
     // live one once the next trip starts, so the timer goes with it.
@@ -1723,14 +1737,16 @@ function leaderTimelineHtml(bus) {
   const tl = bus._leaderTimeline;
   const isLive = !bus._scheduledOnly && !bus._isLayover;
   const hasTL  = !!(tl && (tl.past.length || tl.current || tl.next.length));
-  // Nothing to show, and not a live card that needs a home for its crowding
-  // badge → render nothing at all.
-  if (!hasTL && !isLive) return '';
+  const blk    = bus.BlockID || bus.label || '';
 
-  // Passenger seat crowding now lives here, right-aligned on the Leaders line.
+  // Left side of the Leaders line: run-number chips first, then crowding.
+  const runChips = runChipsHtml(blk);
   const seat = seatInfo(bus.estimated_seat_availability);
   const seatHtml = (isLive && seat.show)
     ? '<span class="seat-tag ' + seat.c + '">' + ICONS.seat + ' ' + seat.t + '</span>' : '';
+
+  // Nothing to show at all → render nothing.
+  if (!hasTL && !seatHtml && !runChips) return '';
 
   const row = r =>
     '<div class="tl-row">' +
@@ -1748,7 +1764,15 @@ function leaderTimelineHtml(bus) {
   } else {
     inner = '<div class="tl-head">No leader info</div>';
   }
-  return '<details class="leader-tl"><summary>Leaders' + seatHtml + '</summary>' + inner + '</details>';
+  // Row: run chips + crowding on the left, "Leaders ▸" control on the right.
+  // Only the control toggles the panel (see the delegated click handler).
+  const isOpen = openLeaders.has(String(blk));
+  return '<div class="leader-tl' + (isOpen ? ' open' : '') + '" data-lead-blk="' + esc(String(blk)) + '">' +
+           '<div class="leader-sum">' + runChips + seatHtml +
+             '<span class="lead-toggle" data-lead-toggle>Leaders <span class="arrow">▸</span></span>' +
+           '</div>' +
+           '<div class="leader-body' + (isOpen ? '' : ' hidden') + '">' + inner + '</div>' +
+         '</div>';
 }
 
 // ── ALERTS / DETOURS ─────────────────────────────────────────
@@ -1860,7 +1884,21 @@ function goToPage(i) {
   // Tap-to-switch fallback for non-touch input (and easier automated testing).
   content.addEventListener('click', e => {
     const dot = e.target.closest('.page-dot');
-    if (dot) goToPage(parseInt(dot.dataset.page, 10));
+    if (dot) { goToPage(parseInt(dot.dataset.page, 10)); return; }
+
+    // Leaders expand/collapse — only the right-side "Leaders" control toggles
+    // the panel; run chips (also on this line) fall through to open their PDF.
+    const toggle = e.target.closest('[data-lead-toggle]');
+    if (toggle) {
+      const tl  = toggle.closest('.leader-tl');
+      const blk = tl && tl.dataset.leadBlk;
+      const body = tl && tl.querySelector('.leader-body');
+      if (tl && body) {
+        const nowOpen = body.classList.toggle('hidden') === false;
+        tl.classList.toggle('open', nowOpen);
+        if (blk) { if (nowOpen) openLeaders.add(blk); else openLeaders.delete(blk); }
+      }
+    }
   });
 })();
 
@@ -1896,6 +1934,7 @@ async function onRouteChange() {
 
   busCache.clear();
   resetPositionState(); // different route → fresh position numbers & pass flags
+  openLeaders.clear();  // don't carry expanded Leaders panels onto a new route
   loadScheduleData(state.route);
   isFirstRender = true;
   lastHTML = '';
