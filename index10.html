@@ -86,9 +86,23 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .pages-wrap{overflow:hidden}
 .pages-track{display:flex;transition:transform .25s ease-out}
 .page{flex:0 0 100%;min-width:0}
-.page-dots{display:flex;justify-content:center;gap:8px;padding:10px 16px 16px;position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border)}
+.page-dots{display:flex;justify-content:center;gap:8px;padding:10px 16px 16px;position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);flex-wrap:wrap}
 .page-dot{font-size:12px;font-weight:700;padding:6px 16px;border-radius:20px;background:var(--card);color:var(--text-faint);cursor:pointer;touch-action:manipulation;border:1px solid var(--border-light)}
 .page-dot.active{background:var(--accent-dim);color:var(--accent);border-color:var(--accent)}
+.page-dot.detour-dot.active{background:var(--yellow-dim);color:var(--yellow);border-color:var(--yellow)}
+.page-dot .dot-count{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;margin-left:3px;border-radius:8px;background:var(--yellow);color:#1a1300;font-size:10px;font-weight:800;vertical-align:middle}
+
+/* DETOURS PAGE */
+.detours-page{padding-bottom:8px}
+.detour-list{padding:6px 16px 20px}
+.detour-card{background:var(--card);border:1px solid var(--border-light);border-left:3px solid var(--yellow);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.detour-header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+.detour-badge{font-size:12px;font-weight:800;padding:2px 8px;border-radius:5px;background:var(--accent-dim);color:var(--accent);white-space:nowrap}
+.detour-dir{font-size:11px;font-weight:800;padding:2px 8px;border-radius:4px;background:var(--yellow-dim);color:var(--yellow);letter-spacing:.03em}
+.detour-title{font-size:14px;font-weight:700;color:var(--text);flex:1;min-width:0}
+.detour-body{display:flex;flex-direction:column;gap:9px}
+.detour-slabel{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);margin-bottom:2px}
+.detour-scontent{font-size:13px;line-height:1.5;color:var(--text-dim);word-break:break-word}
 
 /* TIMELINE */
 .timeline-wrap{padding:18px 16px 24px;will-change:transform;-webkit-overflow-scrolling:touch}
@@ -217,9 +231,15 @@ a.run-chip:active{opacity:.7}
 .more-sched>summary::before{content:'▸ ';color:var(--text-faint)}
 .more-sched[open]>summary::before{content:'▾ '}
 
-/* DEP / ARR times (scheduled trip start & end) — kept during layover & serving */
-.deparr-row{display:flex;gap:12px;margin-top:6px;font-size:13px;font-weight:600;color:var(--text-dim);font-variant-numeric:tabular-nums;flex-wrap:wrap}
-.da-t{white-space:nowrap}
+/* DEP / ARR two-line block (trip start/end + from/at terminals) — kept during
+   layover & serving. Each line is single-line; the terminal name truncates. */
+.deparr{margin-top:6px;font-size:13px;font-weight:600;color:var(--text-dim);font-variant-numeric:tabular-nums}
+.da-line{display:flex;align-items:center;gap:8px;min-width:0}
+.da-line+.da-line{margin-top:2px}
+.da-dir,.da-dir-spacer{flex:0 0 30px;width:30px;box-sizing:border-box}
+.da-dir{text-align:center;font-weight:800;color:var(--accent);font-size:12px;background:var(--accent-dim);padding:2px 0;border-radius:4px;letter-spacing:.02em}
+.da-t{white-space:nowrap;flex:0 0 auto}
+.da-loc{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-faint);font-weight:500}
 
 /* BOTTOM ROW (location) */
 .node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
@@ -347,8 +367,18 @@ const GTFS_OBSERVED_BASE = 'https://deenersin-png.github.io/septa-gtfs/data-obse
 // the septa-scheduler repo itself.
 const PADDLE_BASE = 'https://deenersin-png.github.io/septa-scheduler/data';
 
+// SEPTA's BusDetours API doesn't send CORS headers, so (like the standalone
+// detours app) fetch it through a proxy. `corsproxy.io/?url=<encoded>`.
+const DETOUR_PROXY = 'https://corsproxy.io/?url=';
+const DETOUR_API   = 'https://www3.septa.org/api/BusDetours/';
+
 // ── STATE ────────────────────────────────────────────────────
 const state = { route: '', status: 'idle', lastUpdate: null };
+
+// Active detours for the current route (flattened from the API's route_info
+// groups), shown on the swipeable "Detours" page. Loaded per route change.
+let routeDetours = [];
+let detourReqId  = 0;
 
 // ── SCHEDULE DATA (SEPTA GTFS, via septa-gtfs pipeline) ───────
 const sched = { blockTrips: new Map(), loaded: false, schedOrderByRoute: new Map(), observed: new Map(), recoveryBlocks: new Map(), vehicleByBlock: new Map(), dirNames: {} };
@@ -480,20 +510,28 @@ async function loadScheduleData(route) {
       if (stateRes.ok) {
         const stateJson = await stateRes.json();
         for (const b of Object.values(stateJson.blocks || {})) {
-          // Last-known bus number for this block from ANY route it's on — blocks
-          // interline across routes (e.g. a bus runs route 21, then continues the
-          // SAME block onto route 65), so the vehicle currently live on route 21
-          // is the one that will appear on route 65's scheduled card. Capture
-          // globally, keyed by block id, freshest sighting wins. "None"/0 junk.
+          // Last-known bus number for this block. Block NUMBERS repeat across
+          // routes and days (route 42's 9110 has nothing to do with route 21's
+          // 9110), so cross-route data is only trustworthy when it's a true
+          // interline: the SAME bus currently LIVE on another route, about to
+          // continue this block here (e.g. 9128 live on route 21 → route 65).
+          //  - same route            → keep it (a block that ran earlier today
+          //                            keeps its bus while it sits scheduled);
+          //  - different route, LIVE  → keep it (interlining bus);
+          //  - different route, ended → IGNORE (a finished run that merely
+          //                            shares the block number — was showing a
+          //                            wrong bus e.g. route 42's 3655 on 9110).
+          // Staleness is still gated per-lookup by isVehicleFresh().
           const vid = String(b.vehicleId || '').trim();
-          if (vid && vid !== '0' && vid.toLowerCase() !== 'none') {
+          const sameRoute = b.routeId === matchedName;
+          if (vid && vid !== '0' && vid.toLowerCase() !== 'none' && (sameRoute || b.isLive === true)) {
             const ts = b.lastSeenAtMs || b.endedAtMs || 0;
             const ex = vehicleByBlock.get(String(b.blockId));
             if (!ex || ts >= ex.ts) vehicleByBlock.set(String(b.blockId), { vehicleId: vid, ts });
           }
           // Recovery ("at terminal") stays route-specific — it's about which
           // blocks are quietly sitting at THIS route's terminal right now.
-          if (b.routeId === matchedName && b.isLive === false) {
+          if (sameRoute && b.isLive === false) {
             recoveryBlocks.set(String(b.blockId), {
               direction: b.direction, vehicleId: b.vehicleId,
               sequence: b.sequence, destination: b.destination,
@@ -618,6 +656,54 @@ function getObservedStart(block, tripId) {
 // operator pulls in) — so the pull-OUT time is the segment marked potype 'O'
 // and the pull-IN time is the segment marked pitype 'I', each appearing on a
 // different run; both run numbers are collected. Loaded once, all districts.
+// Fetch active detours for `route` (via the CORS proxy) and flatten the API's
+// route_info groups into simple detour-card objects. Guarded by a request id
+// so a stale in-flight load can't clobber a newer route's detours. Best-effort
+// — proxy/network failure just leaves the Detours page empty.
+async function loadDetours(route) {
+  const reqId = ++detourReqId;
+  routeDetours = [];
+  if (!route) return;
+  const cards = [];
+  const seen = new Set();
+  for (const name of getAliases(route)) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+      let data;
+      try {
+        const res = await fetch(DETOUR_PROXY + encodeURIComponent(DETOUR_API + name), { signal: ctrl.signal });
+        if (!res.ok) continue;
+        data = await res.json();
+      } finally { clearTimeout(timer); }
+      if (!Array.isArray(data)) continue;
+      for (const group of data) {
+        const rid = String(group.route_id || name);
+        for (const d of (group.route_info || [])) {
+          const card = {
+            routeId: rid,
+            direction:     String(d.route_direction || '').trim(),
+            reason:        String(d.reason || '').trim(),
+            startLocation: String(d.start_location || '').trim(),
+            endLocation:   String(d.end_location || '').trim(),
+            startDate:     String(d.start_date_time || '').trim(),
+            endDate:       String(d.end_date_time || '').trim(),
+            message:       String(d.current_message || '').trim(),
+          };
+          const key = card.direction + '|' + card.reason + '|' + card.message;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          cards.push(card);
+        }
+      }
+    } catch (e) { /* alias failed — try the next */ }
+  }
+  if (reqId !== detourReqId) return; // a newer route change superseded us
+  routeDetours = cards;
+  // Re-render so the freshly-loaded detours show without waiting a full tick.
+  if (state.route && !ticking) { lastHTML = ''; tick(); }
+}
+
 async function loadPaddleData() {
   if (paddle.loaded || paddle.loading) return;
   paddle.loading = true;
@@ -886,10 +972,14 @@ function mergeScheduledBlocks(merged, liveBuses) {
     if (st.state === 'not_started' && (st.dueOutMin - nowMin) > SCHED_LOOKAHEAD_MIN) continue;
 
     // Terminal-arrival time for the layover timer: the poller's real ended-at
-    // if we have it, else the scheduled end of the last completed trip.
+    // if it's RECENT, else the scheduled end of the last completed trip. The
+    // recency gate is essential — a weekly block's state.json entry can be days
+    // old (last week's run), which without this showed a bogus "137h at
+    // terminal". Stale → fall back to today's schedule.
     let arrivedMs = null;
     if (st.state === 'layover_expected') {
-      arrivedMs = (sched.recoveryBlocks.get(blk) || {}).endedAtMs || null;
+      const rb = sched.recoveryBlocks.get(blk);
+      if (rb && rb.endedAtMs && (Date.now() - rb.endedAtMs) <= LAYOVER_TIMEOUT_MS) arrivedMs = rb.endedAtMs;
       if (!arrivedMs) {
         const ends = (sched.blockTrips.get(blk) || []).map(t => timeStrToMin(t.end)).filter(x => x != null).sort((a, b) => a - b);
         let lastEnd = null; ends.forEach(e => { if (e <= nowMin) lastEnd = e; });
@@ -1647,25 +1737,73 @@ function buildAllBuses(merged, anim) {
     }
     h += '</div></div></div>';
   });
+
+  // Extra final page: all detours for this route, both directions together.
+  h += buildDetoursPage(anim);
   h += '</div></div>';
 
-  if (dirKeys.length > 1) {
-    h += '<div class="page-dots">';
-    dirKeys.forEach((dir, i) => {
-      h += '<span class="page-dot' + (i === 0 ? ' active' : '') + '" data-page="' + i + '">' + dirShort(dir) + '</span>';
-    });
+  // Dots: one per direction + a Detours dot. Always shown now (there's always
+  // the detours page in addition to the direction pages).
+  h += '<div class="page-dots">';
+  dirKeys.forEach((dir, i) => {
+    h += '<span class="page-dot' + (i === 0 ? ' active' : '') + '" data-page="' + i + '">' + dirShort(dir) + '</span>';
+  });
+  const detourCount = routeDetours.length;
+  h += '<span class="page-dot detour-dot' + (dirKeys.length === 0 ? ' active' : '') + '" data-page="' + dirKeys.length + '">⚠ Detours' +
+       (detourCount ? ' <span class="dot-count">' + detourCount + '</span>' : '') + '</span>';
+  h += '</div>';
+  return h;
+}
+
+// The final swipeable page: every active detour on this route, both directions
+// in one list (mirrors the standalone septa-scheduler detours app).
+function buildDetoursPage(anim) {
+  let h = '<div class="page"><div class="detours-page">';
+  h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">⚠ Detours · ' + routeDetours.length + '</div>';
+  if (!routeDetours.length) {
+    h += '<div class="msg"><div class="icon">✅</div><div class="main">No active detours</div>' +
+         '<div class="sub">Route ' + esc(state.route) + ' is running its regular route</div></div>';
+  } else {
+    h += '<div class="detour-list">';
+    routeDetours.forEach(d => { h += detourCardHtml(d); });
     h += '</div>';
   }
-  return h;
+  return h + '</div></div>';
+}
+
+function detourCardHtml(d) {
+  let h = '<div class="detour-card">';
+  h += '<div class="detour-header">';
+  h += '<span class="detour-badge">Route ' + esc(d.routeId) + '</span>';
+  if (d.direction) h += '<span class="detour-dir">' + esc(d.direction) + '</span>';
+  h += '<span class="detour-title">' + esc(d.reason || 'Bus Route Detour') + '</span>';
+  h += '</div>';
+  h += '<div class="detour-body">';
+  if (d.startLocation || d.endLocation) {
+    h += '<div class="detour-section"><div class="detour-slabel">Location</div><div class="detour-scontent">';
+    if (d.startLocation) h += 'From: ' + esc(d.startLocation) + (d.endLocation ? '<br>' : '');
+    if (d.endLocation)   h += 'To: ' + esc(d.endLocation);
+    h += '</div></div>';
+  }
+  if (d.message) {
+    h += '<div class="detour-section"><div class="detour-slabel">Details</div><div class="detour-scontent">' + esc(d.message) + '</div></div>';
+  }
+  if (d.startDate || d.endDate) {
+    h += '<div class="detour-section"><div class="detour-slabel">Timeline</div><div class="detour-scontent">';
+    if (d.startDate) h += 'Start: ' + esc(d.startDate) + (d.endDate ? '<br>' : '');
+    if (d.endDate)   h += 'End: ' + esc(d.endDate);
+    h += '</div></div>';
+  }
+  return h + '</div></div>';
 }
 
 // Scheduled departure (trip start) & arrival (trip end) minutes for the trip a
 // bus is on / about to run. Scheduled ghosts carry these directly; a live bus
 // derives them from its live trip id (fallback: the last trip already started).
 function depArrOf(bus) {
-  if (bus._scheduledOnly) return { dep: bus._depMin, arr: bus._arrMin };
+  if (bus._scheduledOnly) return { dep: bus._depMin, arr: bus._arrMin, from: bus._firstStop || '', to: bus._lastStop || '' };
   const trips = sched.blockTrips.get(String(bus.BlockID || ''));
-  if (!trips || !trips.length) return { dep: null, arr: null };
+  if (!trips || !trips.length) return { dep: null, arr: null, from: '', to: '' };
   const tid = bus.trip != null ? String(bus.trip) : null;
   let t = tid ? trips.find(x => String(x.trip_id) === tid) : null;
   if (!t) {
@@ -1675,18 +1813,31 @@ function depArrOf(bus) {
     for (const o of sorted) if (o.s <= nowMin) t = o.x;
     if (!t && sorted.length) t = sorted[0].x;
   }
-  return t ? { dep: timeStrToMin(t.start), arr: timeStrToMin(t.end) } : { dep: null, arr: null };
+  return t ? { dep: timeStrToMin(t.start), arr: timeStrToMin(t.end), from: t.first || '', to: t.last || '' }
+           : { dep: null, arr: null, from: '', to: '' };
 }
 
-// "Dep: H:MM · Arr: H:MM" line, kept visible for a bus both while it's waiting
-// (layover / scheduled) and while it's serving.
-function depArrLineHtml(bus) {
+// Two-line Dep/Arr block, kept visible for a bus both while it's waiting
+// (layover / scheduled) and while it's serving:
+//   [EB] Dep: H:MM  from: <origin>
+//        Arr: H:MM  at:   <destination>
+// showDir=true puts the direction chip on line 1 and indents line 2 to align
+// (live cards); for ghosts the "SCHD EB:" badge already carries direction, so
+// showDir=false and both lines sit flush-left. Each line stays single-line —
+// the origin/destination text truncates (CSS ellipsis) if it's too long.
+function depArrLineHtml(bus, showDir) {
   const da = depArrOf(bus);
   if (da.dep == null && da.arr == null) return '';
-  let s = '<div class="deparr-row">';
-  if (da.dep != null) s += '<span class="da-t">Dep: ' + fmtClock(da.dep) + '</span>';
-  if (da.arr != null) s += '<span class="da-t">Arr: ' + fmtClock(da.arr) + '</span>';
-  return s + '</div>';
+  const lead   = showDir ? '<span class="da-dir">' + esc(dirShort(bus.Direction)) + '</span>' : '';
+  const spacer = showDir ? '<span class="da-dir-spacer"></span>' : '';
+  const depTxt = da.dep != null ? 'Dep: ' + fmtClock(da.dep) : '';
+  const arrTxt = da.arr != null ? 'Arr: ' + fmtClock(da.arr) : '';
+  const fromLoc = da.from ? '<span class="da-loc">from: ' + esc(da.from) + '</span>' : '';
+  const toLoc   = da.to   ? '<span class="da-loc">at: '   + esc(da.to)   + '</span>' : '';
+  let h = '<div class="deparr">';
+  h += '<div class="da-line">' + lead   + '<span class="da-t">' + depTxt + '</span>' + fromLoc + '</div>';
+  h += '<div class="da-line">' + spacer + '<span class="da-t">' + arrTxt + '</span>' + toLoc   + '</div>';
+  return h + '</div>';
 }
 
 function buildNode(bus, idx, anim) {
@@ -1761,23 +1912,17 @@ function buildNode(bus, idx, anim) {
     let badgeCls = 'sched-only-badge';
     if (bus._schedState === 'in_service_expected') badgeCls += ' expected';
     if (served) badgeCls += ' served';
-    // Dep/Arr of the relevant trip — shown for every scheduled/ghost state
-    // (waiting OR should-be-serving). Location (From/to) intentionally omitted
-    // for ghosts.
-    let deparr = '';
-    if (bus._depMin != null) deparr += 'Dep: ' + fmtClock(bus._depMin);
-    if (bus._depMin != null && bus._arrMin != null) deparr += ' · ';
-    if (bus._arrMin != null) deparr += 'Arr: ' + fmtClock(bus._arrMin);
+    // Badge row: "SCHD EB:" + any overdue flag + layover timer. The Dep/Arr
+    // times and from/at terminals live in the two-line block below (the badge
+    // already carries the direction, so no chip there).
     h += '<div class="sched-only-row"><span class="' + badgeCls + '">SCHD ' + esc(dirAbbr) + ':</span>';
-    h += '<span class="sched-only-detail">' + deparr + '</span>';
     if (bus._overdueMin > 0) h += '<span class="sched-only-detail overdue">OVERDUE ' + bus._overdueMin + 'm</span>';
-    // Layover timer — counts up from terminal arrival; the card flips to a
-    // live one once the next trip starts, so the timer goes with it.
     if (served && bus._layoverSince) {
       h += '<span class="term-timer" data-layover-since="' + bus._layoverSince + '">' +
            fmtDuration(Date.now() - bus._layoverSince) + '</span>';
     }
     h += '</div>';
+    h += depArrLineHtml(bus, false);
     h += passInfoHtml(bus);
     h += paddleRowHtml(blk);
     h += leaderTimelineHtml(bus);
@@ -1788,7 +1933,7 @@ function buildNode(bus, idx, anim) {
   // crowding moved down into the expandable "Leaders" line (see below).
 
   // Dep/Arr of the trip this bus is serving — kept visible after departure.
-  h += depArrLineHtml(bus);
+  h += depArrLineHtml(bus, true);
 
   if (isLay) {
     const dur = fmtDuration(Date.now() - (bus._layoverSince || Date.now()));
@@ -2068,6 +2213,7 @@ async function onRouteChange() {
   resetPositionState(); // different route → fresh position numbers & pass flags
   openLeaders.clear();  // don't carry expanded Leaders panels onto a new route
   loadScheduleData(state.route);
+  loadDetours(state.route);  // detours page for the new route
   isFirstRender = true;
   lastHTML = '';
   activePage = 0; // a new route may have a different direction ordering/count
