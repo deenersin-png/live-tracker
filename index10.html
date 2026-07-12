@@ -395,8 +395,44 @@ const paddle = { byBlock: new Map(), loaded: false, loading: false };
 // date→daytype map, which we consult before falling back to day-of-week.
 let calendarOverrides = {};
 
-function localISODate() {
+// SEPTA's service day rolls over in the pre-dawn lull, NOT at midnight. Late
+// "owl" trips belong to the PREVIOUS calendar day and are written in GTFS
+// 24:00+ notation (e.g. 25:30 = 1:30 AM the next morning). So before
+// SERVICE_DAY_START_HR we're still in yesterday's service day: use yesterday's
+// date/day-type, and count "now" as wall-clock + 24h so it lines up with those
+// 24:00+ owl trips. (Verified live: at ~1:30 AM Sunday the buses on the street
+// are Saturday blocks running Saturday's owl service — the app must load
+// Saturday, not Sunday. Without this it loaded Sunday and showed the real
+// Saturday buses PLUS phantom Sunday scheduled blocks = "too many buses".)
+const SERVICE_DAY_START_HR = 4;
+
+function inOwlWindow(d) { return d.getHours() < SERVICE_DAY_START_HR; }
+
+// Calendar Date of the current SERVICE day (yesterday during owl hours).
+function serviceDate() {
   const d = new Date();
+  if (inOwlWindow(d)) d.setDate(d.getDate() - 1);
+  return d;
+}
+
+// Minutes since midnight of the current service day. In owl hours this is
+// wall-clock + 1440 so it matches GTFS 24:00+ owl trip times.
+function serviceNowMin() {
+  const d = new Date();
+  const m = d.getHours() * 60 + d.getMinutes();
+  return inOwlWindow(d) ? m + 1440 : m;
+}
+
+// Epoch ms of the current service day's midnight (yesterday's during owl hours)
+// — the base for turning a service-day minute (incl. 24:00+) into a real time.
+function serviceMidnightMs() {
+  const d = serviceDate();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function localISODate() {
+  const d = serviceDate();
   return d.getFullYear() + '-' +
     String(d.getMonth() + 1).padStart(2, '0') + '-' +
     String(d.getDate()).padStart(2, '0');
@@ -405,7 +441,7 @@ function localISODate() {
 function getDayType() {
   const ov = calendarOverrides[localISODate()];
   if (ov) return ov;
-  const d = new Date().getDay();
+  const d = serviceDate().getDay();
   if (d === 0) return 'sunday';
   if (d === 6) return 'saturday';
   return 'weekday';
@@ -961,7 +997,7 @@ function scheduledBlockStatus(blk, nowMin) {
 // even with no SEPTA live data. Blocks already covered by real data are
 // skipped, so the moment a bus goes live its real card replaces this one.
 function mergeScheduledBlocks(merged, liveBuses) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const known = new Set(merged.map(b => String(b.BlockID || '')));
   const dirMap = buildGtfsDirMap(liveBuses);
 
@@ -983,7 +1019,7 @@ function mergeScheduledBlocks(merged, liveBuses) {
       if (!arrivedMs) {
         const ends = (sched.blockTrips.get(blk) || []).map(t => timeStrToMin(t.end)).filter(x => x != null).sort((a, b) => a - b);
         let lastEnd = null; ends.forEach(e => { if (e <= nowMin) lastEnd = e; });
-        if (lastEnd != null) { const d = new Date(); d.setHours(0, 0, 0, 0); arrivedMs = d.getTime() + lastEnd * 60000; }
+        if (lastEnd != null) arrivedMs = serviceMidnightMs() + lastEnd * 60000;
       }
     }
 
@@ -1030,7 +1066,7 @@ function mergeScheduledBlocks(merged, liveBuses) {
 // about to run, starting from that terminal. Blocks with no next trip today
 // are dropped (done for the day). Live buses pass through untouched.
 function annotateLayovers(merged) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const out = [];
   for (const bus of merged) {
     if (!bus._isLayover) { out.push(bus); continue; }
@@ -1138,7 +1174,7 @@ function relevantTripStart(bus, block, nowMin) {
 // only question that's actually answerable — did the follower leave yet —
 // without needing any of this time-math.
 function annotateOvertake(merged) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const byBlock = new Map();
   for (const b of merged) { byBlock.set(String(b.BlockID || ''), b); b._overtake = null; b._passedLeader = null; }
 
@@ -1343,7 +1379,7 @@ function annotatePositions(merged) {
   // / location, driver likely not logged in, but the schedule says it's
   // mid-service). Ghosts hold a numbered slot as if running (marked _numGhost
   // → blue "!" rendering). Layover / not-started / done blocks aren't numbered.
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const byDir = {};
   for (const b of merged) {
     const isGhost = b._scheduledOnly && b._schedState === 'in_service_expected';
@@ -1454,7 +1490,7 @@ function passInfoHtml(bus) {
 }
 
 function annotateSchedLeader(merged) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const byBlock = new Map();
   for (const b of merged) byBlock.set(String(b.BlockID || ''), b);
 
@@ -1551,7 +1587,7 @@ function leaderForTrip(block, dir, startMin) {
 // Full leader history for a bus across its day: past / current / next leaders,
 // one row per trip, deduped per section. Attached as bus._leaderTimeline.
 function annotateLeaderTimeline(merged) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const byBlock = new Map();
   for (const b of merged) byBlock.set(String(b.BlockID || ''), b);
 
@@ -1807,7 +1843,7 @@ function depArrOf(bus) {
   const tid = bus.trip != null ? String(bus.trip) : null;
   let t = tid ? trips.find(x => String(x.trip_id) === tid) : null;
   if (!t) {
-    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    const nowMin = serviceNowMin();
     const sorted = trips.map(x => ({ x, s: timeStrToMin(x.start) }))
       .filter(o => o.s != null).sort((a, b) => a.s - b.s);
     for (const o of sorted) if (o.s <= nowMin) t = o.x;
