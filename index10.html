@@ -848,7 +848,10 @@ function updateCache(liveBuses, routeId) {
     const ex = busCache.get(key) || {};
     busCache.set(key, {
       blockId:      String(bus.BlockID || ''),
-      vehicleId:    String(bus.VehicleID || bus.label || ''),
+      // A bus keeps its logged-in number all day (both directions). If the live
+      // feed momentarily drops the VehicleID (common around login / a terminal
+      // turnaround), keep the last-known number instead of blanking it.
+      vehicleId:    String(bus.VehicleID || bus.label || '').trim() || (ex.vehicleId || ''),
       direction:    bus.Direction || '',
       sequence:     parseInt(bus.next_stop_sequence) || ex.sequence || 0,
       destination:  bus.destination || ex.destination || '',
@@ -991,6 +994,23 @@ function scheduledBlockStatus(blk, nowMin) {
   return { state: 'done', trip: last };
 }
 
+// True once this block's operator pull-in (from the pick/paddle data) has
+// passed — i.e. it's finished for the day. SEPTA's GTFS can carry PHANTOM late
+// / owl trips for a block that actually pulled in hours earlier (seen live:
+// block 9121 pulls in 8:32 PM per the pick, yet GTFS shows trips to 2:21 AM —
+// while genuine owl blocks like 9133 have a matching ~3 AM pick pull-in). The
+// operator pick is the truth, so a passed pull-in overrides a phantom GTFS owl
+// ghost. Pull-in is a wall-clock AM/PM time; an early-AM one is an owl pull-in,
+// so shift it into 24:00+ notation to compare against serviceNowMin.
+function blockPulledIn(blk) {
+  const rec = paddle.byBlock.get(String(blk));
+  if (!rec || !rec.piTime) return false;
+  let pi = clockToMin(rec.piTime);
+  if (pi == null || !isFinite(pi)) return false;
+  if (pi < SERVICE_DAY_START_HR * 60) pi += 1440; // early-AM pull-in = owl (24:00+)
+  return pi <= serviceNowMin();
+}
+
 // Inject a placeholder card for every scheduled block on this route that has
 // no live/layover/recovery representation yet — so the operator sees at
 // least "Block #### is scheduled" (plus bus number if we've ever seen it)
@@ -1003,6 +1023,7 @@ function mergeScheduledBlocks(merged, liveBuses) {
 
   for (const blk of sched.blockTrips.keys()) {
     if (known.has(blk)) continue;
+    if (blockPulledIn(blk)) continue; // operator pick says it's already pulled in → done
     const st = scheduledBlockStatus(blk, nowMin);
     if (!st || st.state === 'done') continue;
     if (st.state === 'not_started' && (st.dueOutMin - nowMin) > SCHED_LOOKAHEAD_MIN) continue;
@@ -1905,11 +1926,13 @@ function buildNode(bus, idx, anim) {
 
   h += '<div class="node-row1">';
   h += '<span class="block-num">' + esc(String(blk)) + '</span>';
-  // Bus number comes only from the live feed; a scheduled-only block may not
-  // have one yet (or its only history is from a previous service day). Show it
-  // when known from today, otherwise a muted "pending" placeholder.
-  if (vid) {
-    h += '<span class="vehicle-num">' + ICONS.bus + ' ' + esc(vid) + '</span>';
+  // A bus keeps its logged-in number all day, both directions. Prefer the live
+  // VehicleID, but fall back to the number remembered for this block (from an
+  // earlier sighting on either direction) — so a momentary feed drop or a
+  // just-turned-around bus doesn't blank to "—"/"pending".
+  const showVid = vid || knownVehicleFor(String(blk));
+  if (showVid) {
+    h += '<span class="vehicle-num">' + ICONS.bus + ' ' + esc(showVid) + '</span>';
   } else if (isSched) {
     h += '<span class="vehicle-num unknown">' + ICONS.bus + ' Bus# pending</span>';
   } else {
